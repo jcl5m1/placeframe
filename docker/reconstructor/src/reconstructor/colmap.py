@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from shutil import rmtree
@@ -32,11 +34,26 @@ from scipy.spatial.transform import Rotation
 
 from .metrics_builder import MetricsBuilder
 from .options_builder import OptionsBuilder
+from .prior_mapper import prior_pose_mapping
 from .progress_publisher import ReconstructionPublisher
 from .rig import Rig, Transform
 
 COLMAP_DB_FILE = "database.db"
 COLMAP_SFM_DIRECTORY = "sfm_model"
+# Optional per-host mapper settings, read at the start of every job so they can change between jobs:
+#   {"mode": "incremental" | "prior_poses" | "auto", "incremental_completion": false, "reanchor_dropped": false,
+#    "ba_use_gpu": false (needs a CUDA-enabled pycolmap),
+#    "ba_global_frames_ratio": 1.1, "ba_global_points_ratio": 1.1, "ba_global_max_num_iterations": 50}
+# prior_poses starts every frame at its capture pose and refines with pose-prior bundle adjustment instead of
+# growing the map frame by frame; the ba_* values thin out the incremental mapper's global bundle adjustments.
+MAPPER_CONFIG_PATH = Path(os.environ.get("RECONSTRUCTOR_MAPPER_CONFIG", "/etc/placeframe/mapper.json"))
+TRUSTED_PRIOR_SIGMA_M = 0.5
+MAPPER_BUNDLE_ADJUSTMENT_KEYS = (
+    "ba_global_frames_ratio",
+    "ba_global_points_ratio",
+    "ba_global_max_num_iterations",
+    "ba_use_gpu",
+)
 
 
 def run_colmap_reconstruction(
@@ -136,14 +153,45 @@ def run_colmap_reconstruction(
     # Phase total is the candidate image count — an upper bound, since COLMAP may drop images that
     # fail to register or get filtered after bundle adjustment.
     publisher.set_phase(ReconstructionStatus.RECONSTRUCTING, len(colmap_image_ids))
-    reconstructions = incremental_mapping(
-        database_path=str(colmap_db_path),
-        image_path=str(images_path),
-        output_path=str(colmap_sfm_directory),
-        options=options.incremental_pipeline_options(),
-        initial_image_pair_callback=progress.on_initial_image_pair,
-        next_image_callback=progress.on_next_image,
-    )
+    mapper_config = _mapper_config()
+    pipeline_options = options.incremental_pipeline_options()
+    for key in MAPPER_BUNDLE_ADJUSTMENT_KEYS:
+        if key in mapper_config:
+            setattr(pipeline_options, key, mapper_config[key])
+    mode = mapper_config.get("mode", "incremental")
+    if mode == "auto":
+        # Prior-pose mapping when the poses are trustworthy: several rigs (a merge into an existing map, whose capture
+        # carries the map's solved poses) or an explicitly tight position prior (globally consistent poses, such as a
+        # dataset's ground truth). A single recording's raw odometry drifts too much for it; incremental SfM there.
+        sigma = options.options.pose_prior_position_sigma_m
+        trusted = bool(options.options.use_prior_position) and sigma is not None and sigma <= TRUSTED_PRIOR_SIGMA_M
+        mode = "prior_poses" if len(rigs) > 1 or trusted else "incremental"
+    print(f"[mapper] mode={mode} config={mapper_config}")
+    if mode == "prior_poses":
+        reconstructions = prior_pose_mapping(
+            colmap_db_path,
+            images_path,
+            colmap_sfm_directory,
+            {
+                f"{rig_id}/{frame_id}": (transform.rotation, transform.translation)
+                for rig_id, rig in rigs.items()
+                for frame_id, transform in rig.frame_poses.items()
+            },
+            pipeline_options,
+            options.pose_prior_position_sigma_m(),
+            incremental_completion=bool(mapper_config.get("incremental_completion", False)),
+            reanchor_dropped=bool(mapper_config.get("reanchor_dropped", False)),
+            progress=lambda share: publisher.on_progress(int(share * len(colmap_image_ids))),
+        )
+    else:
+        reconstructions = incremental_mapping(
+            database_path=str(colmap_db_path),
+            image_path=str(images_path),
+            output_path=str(colmap_sfm_directory),
+            options=pipeline_options,
+            initial_image_pair_callback=progress.on_initial_image_pair,
+            next_image_callback=progress.on_next_image,
+        )
 
     # Check that at least one reconstruction was created
     if len(reconstructions) == 0:
@@ -242,6 +290,16 @@ def run_colmap_reconstruction(
     savez_compressed(str(frame_poses_npz_file_path), positions=frame_positions, orientations=frame_orientations)
 
     return best_reconstruction
+
+
+def _mapper_config() -> dict[str, Any]:
+    if not MAPPER_CONFIG_PATH.exists():
+        return {}
+    try:
+        return json.loads(MAPPER_CONFIG_PATH.read_text())
+    except ValueError as e:
+        print(f"[mapper] ignoring unreadable {MAPPER_CONFIG_PATH}: {e}")
+        return {}
 
 
 def _registered_frames(
