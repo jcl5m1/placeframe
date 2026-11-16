@@ -98,7 +98,10 @@
         <div id="existingBox" class="picker"><button type="button" id="mapBtn">Loading maps…</button>
           <div id="mapTree" class="tree hidden"></div><input type="hidden" id="map"></div>
         <div id="newBox" class="hidden"><label>Folder for the new map (optional, e.g. <code>office/floor 2</code>)</label>
-          <input id="folder" type="text" list="folderList" placeholder="top level"><datalist id="folderList"></datalist></div></div>
+          <input id="folder" type="text" list="folderList" placeholder="top level"><datalist id="folderList"></datalist>
+          <label style="display:flex;align-items:center;gap:8px;color:var(--ink);margin-top:8px">
+            <input type="checkbox" id="combine" checked> Combine recordings uploaded together into one map</label>
+          <div class="hint">The first recording to finish builds the map; the others are merged into it (their paths must overlap).</div></div></div>
       <div><label id="nameLabel">Name for the updated map (optional)</label><input id="newName" type="text" placeholder="default: original map + N recordings (dates)"></div>
     </div>
     <div id="mapContents" class="contents"></div>
@@ -386,6 +389,7 @@ async function run(st) {
       const r = await api('uploads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
         filename: st.file.name, size: st.file.size, last_modified: st.file.lastModified,
         map_id: newMapMode() ? null : $('map').value, new_map: newMapMode(), folder: $('folder').value.trim(),
+        combine: $('combine').checked,
         new_name: $('newName').value.trim(), replace: $('replace').checked,
         odometry: $('odometry').value }) });
       if (!r.ok) throw new Error((await r.json()).detail || r.statusText);

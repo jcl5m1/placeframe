@@ -212,9 +212,40 @@ def _recording(j: dict) -> dict:
             "into_map": j["map_id"], "produced_map": r.get("map_id"), "produced_name": r.get("name")}
 
 
-def _new_map_name(filename: str) -> str:
+COMBINE_WINDOW_SECONDS = 600
+
+
+def _combined_map(j: dict) -> dict | None:
+    """Recordings uploaded together for one new map (same user and folder, uploads started within 10 minutes,
+    'combine' on) become one map: the first to finish builds it and the rest are merged into it, each into the map
+    the group has most recently produced. Returns {map_id, job} to merge into, or None to build a new map."""
+    me = _upload_meta(j)
+    if not me.get("combine", True):
+        return None
+    best = None
+    for other in _all_jobs():
+        if other["id"] == j["id"] or other.get("state") != "succeeded" or not (other.get("result") or {}).get("map_id"):
+            continue
+        om = _upload_meta(other)
+        same_group = (om.get("user") == me.get("user") and (om.get("folder") or "") == (me.get("folder") or "")
+                      and om.get("combine", True) and (om.get("new_map") or other.get("combined_into"))
+                      and abs(float(om.get("created") or 0) - float(me.get("created") or 0)) < COMBINE_WINDOW_SECONDS)
+        if same_group and (best is None or (other.get("finished") or 0) > (best.get("finished") or 0)):
+            best = other
+    return {"map_id": best["result"]["map_id"], "job": best["id"]} if best else None
+
+
+def _upload_meta(j: dict) -> dict:
+    try:
+        return json.loads(_meta_path(j.get("upload") or j["id"]).read_text())
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+def _new_map_name(filename: str, folder: str = "") -> str:
     recorded = _recording({"id": "", "filename": filename, "map_id": None, "state": ""})["recorded"]
-    return f"X5 recording {recorded or Path(filename).stem}"
+    leaf = folder.rsplit("/", 1)[-1]
+    return f"{leaf} {recorded[:10]}" if leaf and recorded else f"X5 recording {recorded or Path(filename).stem}"
 
 
 def _default_name(map_id: str, filename: str) -> str:
@@ -302,13 +333,14 @@ async def create_upload(body: dict, who: str = Depends(user)):
         for p in UPLOADS.glob("*.json"):
             m = json.loads(p.read_text())
             if m["fingerprint"] == fp and not m.get("complete"):
-                m.update({k: body[k] for k in ("map_id", "new_map", "folder", "new_name", "replace", "odometry")
-                          if k in body})
+                m.update({k: body[k] for k in ("map_id", "new_map", "folder", "combine", "new_name", "replace",
+                                                "odometry") if k in body})
                 _save(m)
                 return {"id": m["id"], "offset": _offset(m), "size": m["size"], "resumed": True}
         uid = uuid.uuid4().hex[:12]
         meta = {"id": uid, "fingerprint": fp, "user": who, "filename": name, "size": size,
                 "map_id": body["map_id"], "new_map": body["new_map"], "folder": _clean_folder(str(body.get("folder") or "")),
+                "combine": body.get("combine", True),
                 "new_name": body.get("new_name") or None,
                 "replace": bool(body.get("replace")), "odometry": body["odometry"], "created": time.time(),
                 "complete": False}
@@ -433,10 +465,15 @@ def _worker() -> None:
         if j["state"] == "succeeded":
             continue
         _set(jid, state="running", started=time.time(), error=None)
+        if j.get("new_map"):
+            base = _combined_map(j)
+            if base:  # an earlier recording of the same upload group already built the map: merge into it
+                j = _set(jid, new_map=False, map_id=base["map_id"], combined_into=base["job"]) or _job(jid)
         target = ["--new-map"] if j.get("new_map") else ["--map", j["map_id"]]
         cmd = [sys.executable, "-u", str(REPO / "add_recording_to_map.py"), j["file"], *target,
                "--job-dir", str(JOBS / jid / "work"), "--odometry", j.get("odometry") or ODOMETRY[0]]
-        default = _new_map_name(j["filename"]) if j.get("new_map") else _default_name(j["map_id"], j["filename"])
+        default = (_new_map_name(j["filename"], j.get("folder") or "") if j.get("new_map")
+                   else _default_name(j["map_id"], j["filename"]))
         cmd += ["--name", j.get("new_name") or default]
         if j.get("replace"):
             cmd.append("--replace")
