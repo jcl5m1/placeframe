@@ -45,12 +45,13 @@
 <body>
 <div id="app">
   <div id="side">
+    <div id="pageNav" style="margin-bottom:8px"></div>
     <a class="back" href="https://28palomas-rtx3090.tail3fa327.ts.net/mapper/">← Back to the dashboard</a>
     <h1 id="mapName">Placeframe map</h1>
     <div class="sub" id="stats">loading…</div>
     <div class="group" id="mapGroup" style="display:none">
       <h2>Map</h2>
-      <select id="mapSel" aria-label="Map"></select>
+      <div id="mapPicker"></div>
     </div>
 
     <div class="group">
@@ -117,6 +118,7 @@
     <div id="phone"><img id="phoneImg" alt="What the phone camera saw"><div class="st" id="phoneSt"></div></div>
   </div>
 </div>
+<script src="pf_ui.js"></script>
 <script>
 (async function () {
   const params = new URLSearchParams(location.search);
@@ -368,10 +370,16 @@
   $('sessHideWalk').onchange = e => { sess.hideWalk = e.target.checked; draw(); };
   window.addEventListener('keydown', e => { if (e.code === 'Space' && sess.doc && e.target.tagName !== 'SELECT') { e.preventDefault(); $('sessPlay').click(); } });
 
+  PfUI.pageNav($('pageNav'), 'viewer');
   if (maps.length > 1) {
+    // Same folder tree as the dashboard: folders come from the mapper (folders.json, written into this folder).
+    const folders = await fetch('folders.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : {}).catch(() => ({}));
     $('mapGroup').style.display = '';
-    $('mapSel').innerHTML = maps.map(m => `<option value="${m.file}" ${m.file === mapFile ? 'selected' : ''}>${m.name}</option>`).join('');
-    $('mapSel').onchange = e => { const u = new URL(location); u.searchParams.set('map', e.target.value); location.href = u; };
+    PfUI.mapPicker($('mapPicker'), {
+      items: maps.map(m => ({ id: m.file, name: m.name, folder: folders[m.id] || '' })),
+      selected: mapFile,
+      onSelect: file => { const u = new URL(location); u.searchParams.set('map', file); location.href = u; },
+    });
   }
   const sessions = await fetch('sessions/index.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : []).catch(() => []);
   if (sessions.length) {

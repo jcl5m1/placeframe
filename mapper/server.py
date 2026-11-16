@@ -46,6 +46,8 @@ FOLDERS = DATA / "map_folders.json"
 # it and merge into it. Group id -> {name, folder, user, created}. Once built, the group's latest Placeframe map
 # stands in for it.
 PENDING = DATA / "pending_maps.json"
+# The map visualizer is a static page (another server, tailnet only): it gets the folder tree as a file in its folder.
+VIEWER_DIR = Path(os.environ.get("MAPPER_VIEWER_DIR", Path.home() / "pf_x5" / "viewer"))
 CHUNK_MAX = 64 * 1024 * 1024
 UPLOAD_ACTIVE_SECONDS = 120  # a partial upload that received data this recently is still in progress
 ALLOWED_EXT = {".insv"}
@@ -206,6 +208,12 @@ def _set_folder(map_id: str, folder: str) -> None:
         tmp = FOLDERS.with_suffix(".tmp")
         tmp.write_text(json.dumps(f, indent=1, sort_keys=True))
         tmp.replace(FOLDERS)
+    _export_folders()
+
+
+def _export_folders() -> None:
+    if VIEWER_DIR.is_dir():
+        _write_json(VIEWER_DIR / "folders.json", _folders())
 
 
 def _clean_folder(folder: str) -> str:
@@ -624,6 +632,11 @@ async def cost_report(name: str, request: Request):
     return FileResponse(path, headers={"Cache-Control": "no-cache"})
 
 
+@app.get("/pf_ui.js")
+async def shared_ui():
+    return FileResponse(REPO / "web" / "pf_ui.js", media_type="text/javascript", headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/")
 async def index():
     # no-cache: browsers revalidate on every load, so dashboard changes show up without a hard refresh
@@ -632,6 +645,7 @@ async def index():
 
 @app.on_event("startup")
 def _startup() -> None:
+    _export_folders()
     UPLOADS.mkdir(parents=True, exist_ok=True)
     JOBS.mkdir(parents=True, exist_ok=True)
     # Resume interrupted work: running/queued jobs restart after their last completed stage.
