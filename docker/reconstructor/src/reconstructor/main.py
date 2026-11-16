@@ -2,6 +2,7 @@ import asyncio
 from asyncio import CancelledError, run, sleep
 from pathlib import Path
 from signal import SIGTERM, signal
+from traceback import print_exc
 from typing import Any, NoReturn, cast
 
 from common.token_manager import TokenManager
@@ -19,6 +20,7 @@ from .run_reconstruction import load_models, run_reconstruction
 from .settings import get_settings
 
 POLL_INTERVAL_SECONDS = 5.0
+TOKEN_REFRESH_INTERVAL_SECONDS = 30.0
 
 settings = get_settings()
 
@@ -32,6 +34,9 @@ async def worker_loop() -> None:
     async with ApiClient(configuration) as api_client:
         api = DefaultApi(api_client)
         loop = asyncio.get_running_loop()
+        # Reconstructions can outlive an access token (multi-hour maps); keep the shared Authorization header
+        # fresh in the background so progress, succeed and fail calls made mid-job are not rejected as expired.
+        token_refresher = asyncio.create_task(_keep_token_fresh(auth, configuration, api_client))
 
         while True:
             try:
@@ -78,15 +83,28 @@ async def worker_loop() -> None:
 
                 except Exception as e:
                     print(f"[{reconstruction_id}] Reconstruction failed: {e}")
+                    print_exc()
 
                     await api.fail_lease(reconstruction_id, str(e))
 
             except CancelledError:
                 print("Worker loop cancelled. Shutting down...")
+                token_refresher.cancel()
                 break
             except Exception as e:
                 print(f"[Critical Worker Error] {e}")
                 await sleep(POLL_INTERVAL_SECONDS)
+
+
+async def _keep_token_fresh(auth: TokenManager, configuration: Configuration, api_client: ApiClient) -> None:
+    while True:
+        try:
+            token = await auth.get_token()
+            configuration.access_token = token
+            cast(dict[Any, Any], api_client.default_headers)["Authorization"] = f"Bearer {token}"
+        except Exception as e:
+            print(f"[Auth] Background token refresh failed: {e}")
+        await sleep(TOKEN_REFRESH_INTERVAL_SECONDS)
 
 
 def handle_sigterm(signum: int, frame: Any) -> NoReturn:
