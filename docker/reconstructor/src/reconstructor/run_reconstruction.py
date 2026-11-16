@@ -32,6 +32,7 @@ from placeframe_api_client import ReconstructionStatus
 from pycolmap._core import set_random_seed  # noqa: PLC2701 — no public API
 from torch import Tensor, cuda, from_numpy, inference_mode  # type: ignore
 
+from . import checkpoints
 from .colmap import run_colmap_reconstruction
 from .metrics_builder import MetricsBuilder
 from .options_builder import OptionsBuilder
@@ -147,15 +148,21 @@ def run_reconstruction(
         for frame_id in rig.frame_poses.keys()
     ]
     publisher.set_phase(ReconstructionStatus.EXTRACTING_FEATURES, total=len(image_list))
+    resumed = checkpoints.load_features(s3_client, settings.reconstructions_bucket, reconstruction_id)
+    if resumed is not None:
+        keypoints, descriptors, global_descriptors, sizes = resumed
+        keypoints, descriptors = KeypointsArrays(keypoints), DescriptorsArrays(descriptors)
     for index, (image_name, camera_config) in enumerate(image_list):
         publisher.on_progress(index + 1)
 
         image_path = CAPTURE_SESSION_DIRECTORY / image_name
         image = canonicalize_image(image_path.read_bytes(), camera_config.orientation)
-        rgb_tensor = from_numpy(asarray(image, dtype=float32)).permute(2, 0, 1).div(255.0)
 
         # Write image back to disk, so incremental_mapping samples the processed image for point cloud colorization
         image.save(image_path)
+        if resumed is not None:
+            continue
+        rgb_tensor = from_numpy(asarray(image, dtype=float32)).permute(2, 0, 1).div(255.0)
 
         tile_descriptors: list[TT[RetrievalDim]] = []
         for tile in tile_image(image):
@@ -170,6 +177,17 @@ def run_reconstruction(
         keypoints[image_name] = image_keypoints.cpu().numpy().astype(float32, copy=False)
         descriptors[image_name] = image_descriptors.cpu().numpy().astype(float32, copy=False)
         sizes[image_name] = (image.height, image.width)
+
+    if resumed is None:
+        checkpoints.save_features(
+            s3_client,
+            settings.reconstructions_bucket,
+            reconstruction_id,
+            keypoints,
+            descriptors,
+            global_descriptors,
+            sizes,
+        )
 
     # Write global descriptors to storage
     file_name, file_bytes = write_global_descriptors(WORK_DIR, global_descriptors)
@@ -212,14 +230,17 @@ def run_reconstruction(
     # Match features
     publisher.set_phase(ReconstructionStatus.MATCHING_FEATURES, total=len(pairs))
     matching_t0 = perf_counter()
-    match_indices = local_feature_matcher(
-        pairs,
-        keypoints,
-        descriptors,
-        sizes,
-        options.lightglue_batch_size(),
-        publisher.on_progress,
-    )
+    match_indices = checkpoints.load_matches(s3_client, settings.reconstructions_bucket, reconstruction_id)
+    if match_indices is None:
+        match_indices = local_feature_matcher(
+            pairs,
+            keypoints,
+            descriptors,
+            sizes,
+            options.lightglue_batch_size(),
+            publisher.on_progress,
+        )
+        checkpoints.save_matches(s3_client, settings.reconstructions_bucket, reconstruction_id, match_indices)
     print(f"matching_features wall_time={perf_counter() - matching_t0:.2f}s pairs={len(pairs)}")
     if cuda.is_available():
         cuda.empty_cache()
