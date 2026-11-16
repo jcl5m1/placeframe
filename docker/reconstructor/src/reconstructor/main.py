@@ -20,6 +20,7 @@ from .run_reconstruction import load_models, run_reconstruction
 from .settings import get_settings
 
 POLL_INTERVAL_SECONDS = 5.0
+HEARTBEAT_CHECK_SECONDS = 30.0
 TOKEN_REFRESH_INTERVAL_SECONDS = 30.0
 
 settings = get_settings()
@@ -62,6 +63,7 @@ async def worker_loop() -> None:
                 print(f"[{reconstruction_id}] Acquired lease")
 
                 publisher = ReconstructionPublisher(api, loop, reconstruction_id)
+                heartbeat = asyncio.create_task(_heartbeat(publisher))
 
                 try:
                     # run_reconstruction is sync and CPU/GPU-bound; push it to a thread so the
@@ -86,6 +88,8 @@ async def worker_loop() -> None:
                     print_exc()
 
                     await api.fail_lease(reconstruction_id, str(e))
+                finally:
+                    heartbeat.cancel()
 
             except CancelledError:
                 print("Worker loop cancelled. Shutting down...")
@@ -105,6 +109,12 @@ async def _keep_token_fresh(auth: TokenManager, configuration: Configuration, ap
         except Exception as e:
             print(f"[Auth] Background token refresh failed: {e}")
         await sleep(TOKEN_REFRESH_INTERVAL_SECONDS)
+
+
+async def _heartbeat(publisher: ReconstructionPublisher) -> None:
+    while True:
+        await sleep(HEARTBEAT_CHECK_SECONDS)
+        publisher.heartbeat()
 
 
 def handle_sigterm(signum: int, frame: Any) -> NoReturn:

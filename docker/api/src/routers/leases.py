@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import timedelta
 from typing import Optional
 from uuid import UUID
@@ -18,7 +19,14 @@ from sqlalchemy.sql import func
 
 from ..database import get_worker_session
 
-LEASE_TIMEOUT = timedelta(minutes=30)
+# Local addition: LEASE_TIMEOUT_MINUTES shortens the reaper for preemptible (rented) workers, which send a
+# progress heartbeat every minute; a worker that stops heartbeating is treated as gone after this long.
+LEASE_TIMEOUT = timedelta(minutes=int(os.environ.get("LEASE_TIMEOUT_MINUTES", "30")))
+# Local addition: LEASE_REQUEUE=1 puts a timed-out job back on the queue (a preempted worker's job is retried by the
+# next worker) instead of failing it, for jobs younger than LEASE_REQUEUE_MAX_AGE_HOURS; older ones still fail, so a
+# job that keeps killing its workers cannot loop forever.
+LEASE_REQUEUE = os.environ.get("LEASE_REQUEUE") == "1"
+LEASE_REQUEUE_MAX_AGE = timedelta(hours=float(os.environ.get("LEASE_REQUEUE_MAX_AGE_HOURS", "24")))
 
 
 class LeaseResponse(BaseModel):
@@ -75,18 +83,29 @@ async def request_lease(session: AsyncSession) -> LeaseResponse:
 
 
 async def _reap_stale_leases(session: AsyncSession) -> None:
-    await session.execute(
-        update(Reconstruction)
-        .where(
-            ~Reconstruction.status.in_((
-                ReconstructionStatus.SUCCEEDED,
-                ReconstructionStatus.FAILED,
-                ReconstructionStatus.CANCELLED,
-                ReconstructionStatus.QUEUED,
-            )),
-            Reconstruction.updated_at < func.now() - LEASE_TIMEOUT,
+    stale = (
+        ~Reconstruction.status.in_((
+            ReconstructionStatus.SUCCEEDED,
+            ReconstructionStatus.FAILED,
+            ReconstructionStatus.CANCELLED,
+            ReconstructionStatus.QUEUED,
+        )),
+        Reconstruction.updated_at < func.now() - LEASE_TIMEOUT,
+    )
+    if LEASE_REQUEUE:
+        await session.execute(
+            update(Reconstruction)
+            .where(*stale, Reconstruction.created_at >= func.now() - LEASE_REQUEUE_MAX_AGE)
+            .values(
+                status=ReconstructionStatus.QUEUED,
+                progress_current=None,
+                progress_total=None,
+                progress_attempt=None,
+                error="Lease timed out; re-queued",
+            )
         )
-        .values(status=ReconstructionStatus.FAILED, error="Lease timed out")
+    await session.execute(
+        update(Reconstruction).where(*stale).values(status=ReconstructionStatus.FAILED, error="Lease timed out")
     )
 
 

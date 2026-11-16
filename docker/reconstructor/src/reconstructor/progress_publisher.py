@@ -9,6 +9,10 @@ from uuid import UUID
 
 from placeframe_api_client import DefaultApi, ProgressUpdate, ReconstructionStatus
 
+# Re-send the last progress state when nothing was sent for this long. The API reaps leases whose row has not
+# been updated recently; long silent stages (bundle adjustment) must not look like a dead worker.
+HEARTBEAT_SECONDS = 60.0
+
 
 class ReconstructionPublisher:
     def __init__(self, api: DefaultApi, loop: AbstractEventLoop, reconstruction_id: UUID) -> None:
@@ -41,6 +45,11 @@ class ReconstructionPublisher:
         if now - self._last_emit >= 0.5:
             self._flush()
             self._last_emit = now
+
+    def heartbeat(self) -> None:
+        if self._status is not None and perf_counter() - self._last_emit >= HEARTBEAT_SECONDS:
+            self._flush()
+            self._last_emit = perf_counter()
 
     def _flush(self) -> None:
         if self._status is None:
