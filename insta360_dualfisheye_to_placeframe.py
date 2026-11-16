@@ -53,6 +53,7 @@ def Ry(a: float) -> np.ndarray:
 
 def extract_frames(video: Path, fps: float, frames_dir: Path, max_seconds: float | None = None) -> list[int]:
     staging = frames_dir / "_ffmpeg"
+    shutil.rmtree(staging, ignore_errors=True)  # leftovers of an interrupted run would be renamed as this run's frames
     for lens in LENSES:
         (frames_dir / lens).mkdir(parents=True, exist_ok=True)
         (staging / lens).mkdir(parents=True, exist_ok=True)

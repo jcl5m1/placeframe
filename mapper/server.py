@@ -42,6 +42,10 @@ HOLD = DATA / "HOLD"
 # Map folders ("experiments/datasets/7-Scenes"): a view-only grouping kept by this service, so Placeframe map names
 # (seen by every client) stay unchanged. Map id -> folder path; maps not listed are at the top level.
 FOLDERS = DATA / "map_folders.json"
+# Pending maps: a new map exists here from the moment its first upload starts ("group:<id>"); its recordings build
+# it and merge into it. Group id -> {name, folder, user, created}. Once built, the group's latest Placeframe map
+# stands in for it.
+PENDING = DATA / "pending_maps.json"
 CHUNK_MAX = 64 * 1024 * 1024
 UPLOAD_ACTIVE_SECONDS = 120  # a partial upload that received data this recently is still in progress
 ALLOWED_EXT = {".insv"}
@@ -115,6 +119,15 @@ async def maps(request: Request, who: str = Depends(user)):
         items.append({"id": m["id"], "name": m.get("name") or m["id"][:8], "active": m.get("active"),
                       "created_at": m.get("created_at"), "base_map_id": chain["base_map_id"],
                       "recordings": len(chain["recordings"]), "folder": folders.get(m["id"], "")})
+    group_of = {j["result"]["map_id"]: j.get("group") or _upload_meta(j).get("group") for j in produced.values()}
+    for m in items:
+        m["group"] = group_of.get(m["id"])
+    built_groups = {g for g in group_of.values() if g}
+    for g, pm in _pending().items():
+        if g not in built_groups:
+            n = sum(1 for j in _group_items(g))
+            items.append({"id": f"group:{g}", "name": pm["name"], "active": False, "created_at": None, "pending": True,
+                          "base_map_id": f"group:{g}", "recordings": n, "folder": pm.get("folder", ""), "group": g})
     by_id = {m["id"]: m for m in items}
     for m in items:
         base = by_id.get(m["base_map_id"])
@@ -122,10 +135,57 @@ async def maps(request: Request, who: str = Depends(user)):
     return sorted(items, key=lambda m: (not m["active"], m["created_at"] or ""), reverse=False)
 
 
+@app.post("/api/new-maps")
+async def create_pending_map(body: dict, who: str = Depends(user)):
+    group = "g" + uuid.uuid4().hex[:11]
+    name = str(body.get("name") or "").strip()[:120] or f"New map {time.strftime('%Y-%m-%d')}"
+    folder = _clean_folder(str(body.get("folder") or ""))
+    with _lock:
+        pending = _pending()
+        pending[group] = {"name": name, "folder": folder, "user": who, "created": time.time()}
+        _write_json(PENDING, pending)
+    return {"id": f"group:{group}", "name": name, "folder": folder, "group": group}
+
+
+def _pending() -> dict[str, dict]:
+    try:
+        return json.loads(PENDING.read_text())
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+def _write_json(path: Path, data) -> None:
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=1, sort_keys=True))
+    tmp.replace(path)
+
+
+def _group_items(group: str) -> list[dict]:
+    """The recordings of a group: its jobs, plus uploads still in progress (no job yet)."""
+    jobs = [j for j in _all_jobs() if (j.get("group") or _upload_meta(j).get("group")) == group]
+    have = {j["id"] for j in jobs}
+    for mp in UPLOADS.glob("*.json"):
+        try:
+            m = json.loads(mp.read_text())
+        except ValueError:
+            continue
+        if m.get("group") == group and m["id"] not in have:
+            jobs.append({"id": m["id"], "filename": m["filename"], "state": "uploading", "map_id": None,
+                         "created": m.get("created"), "user": m.get("user"), "group": group})
+    return jobs
+
+
 @app.post("/api/maps/{map_id}/folder")
 async def set_map_folder(map_id: str, body: dict, who: str = Depends(user)):
     folder = _clean_folder(str(body.get("folder") or ""))
-    _set_folder(map_id, folder)
+    if map_id.startswith("group:"):
+        with _lock:
+            pending = _pending()
+            if map_id[6:] in pending:
+                pending[map_id[6:]]["folder"] = folder
+                _write_json(PENDING, pending)
+    else:
+        _set_folder(map_id, folder)
     return {"id": map_id, "folder": folder}
 
 
@@ -156,6 +216,11 @@ def _clean_folder(folder: str) -> str:
 async def map_contents(map_id: str, request: Request, who: str = Depends(user)):
     """What a map is made of: the original capture it started from, plus every recording merged into it through
     this tool (oldest first), and recordings currently queued or processing against it."""
+    if map_id.startswith("group:"):
+        pm = _pending().get(map_id[6:], {})
+        items = [_recording(j) for j in _group_items(map_id[6:])]
+        return {"base": {"map_id": map_id, "map_name": pm.get("name"), "pending": True}, "recordings": [],
+                "pending": items}
     produced = _lineage()
     chain = _chain(map_id, produced)
     base = {"map_id": chain["base_map_id"]}
@@ -212,27 +277,19 @@ def _recording(j: dict) -> dict:
             "into_map": j["map_id"], "produced_map": r.get("map_id"), "produced_name": r.get("name")}
 
 
-COMBINE_WINDOW_SECONDS = 600
-
-
 def _combined_map(j: dict) -> dict | None:
-    """Recordings uploaded together for one new map (same user and folder, uploads started within 10 minutes,
-    'combine' on) become one map: the first to finish builds it and the rest are merged into it, each into the map
-    the group has most recently produced. Returns {map_id, job} to merge into, or None to build a new map."""
-    me = _upload_meta(j)
-    if not me.get("combine", True):
+    """All new-map recordings of one group (the upload page's 'Create a new map' group) become one map: the first to
+    finish builds it, each later one is merged into the map the group has most recently produced. Returns
+    {map_id, job} to merge into, or None when no recording of the group has built a map yet."""
+    group = j.get("group") or _upload_meta(j).get("group")
+    if not group:
         return None
-    best = None
-    for other in _all_jobs():
-        if other["id"] == j["id"] or other.get("state") != "succeeded" or not (other.get("result") or {}).get("map_id"):
-            continue
-        om = _upload_meta(other)
-        same_group = (om.get("user") == me.get("user") and (om.get("folder") or "") == (me.get("folder") or "")
-                      and om.get("combine", True) and (om.get("new_map") or other.get("combined_into"))
-                      and abs(float(om.get("created") or 0) - float(me.get("created") or 0)) < COMBINE_WINDOW_SECONDS)
-        if same_group and (best is None or (other.get("finished") or 0) > (best.get("finished") or 0)):
-            best = other
-    return {"map_id": best["result"]["map_id"], "job": best["id"]} if best else None
+    built = [o for o in _all_jobs() if o["id"] != j["id"] and o.get("state") == "succeeded"
+             and (o.get("group") or _upload_meta(o).get("group")) == group and (o.get("result") or {}).get("map_id")]
+    if not built:
+        return None
+    last = max(built, key=lambda o: o.get("finished") or 0)
+    return {"map_id": last["result"]["map_id"], "job": last["id"]}
 
 
 def _upload_meta(j: dict) -> dict:
@@ -320,9 +377,14 @@ async def create_upload(body: dict, who: str = Depends(user)):
     size = int(body.get("size", 0))
     if Path(name).suffix.lower() not in ALLOWED_EXT:
         raise HTTPException(400, "upload the raw .insv recording")
+    target = str(body.get("map_id") or "")
+    if target.startswith("group:"):  # a pending map: the recording joins its group
+        body["new_map"], body["group"] = True, target[6:]
     body["new_map"] = bool(body.get("new_map"))
     if body["new_map"]:
         body["map_id"] = None
+    else:
+        body["group"] = None
     if size <= 0 or not (body.get("map_id") or body["new_map"]):
         raise HTTPException(400, "size and either map_id or new_map are required")
     body["odometry"] = body.get("odometry") or ODOMETRY[0]
@@ -333,14 +395,16 @@ async def create_upload(body: dict, who: str = Depends(user)):
         for p in UPLOADS.glob("*.json"):
             m = json.loads(p.read_text())
             if m["fingerprint"] == fp and not m.get("complete"):
-                m.update({k: body[k] for k in ("map_id", "new_map", "folder", "combine", "new_name", "replace",
+                m.update({k: body[k] for k in ("map_id", "new_map", "group", "folder", "new_name", "replace",
                                                 "odometry") if k in body})
                 _save(m)
                 return {"id": m["id"], "offset": _offset(m), "size": m["size"], "resumed": True}
         uid = uuid.uuid4().hex[:12]
         meta = {"id": uid, "fingerprint": fp, "user": who, "filename": name, "size": size,
                 "map_id": body["map_id"], "new_map": body["new_map"], "folder": _clean_folder(str(body.get("folder") or "")),
-                "combine": body.get("combine", True),
+                # New-map uploads carry the page's group id: every recording of a group goes into one map.
+                # Without one (e.g. scripted uploads) each new-map upload is its own group.
+                "group": (str(body.get("group") or "")[:64] or uuid.uuid4().hex[:12]) if body["new_map"] else None,
                 "new_name": body.get("new_name") or None,
                 "replace": bool(body.get("replace")), "odometry": body["odometry"], "created": time.time(),
                 "complete": False}
@@ -430,7 +494,8 @@ def _create_job(upload: dict) -> str:
     jd = JOBS / jid
     jd.mkdir(parents=True, exist_ok=True)
     job = {"id": jid, "upload": upload["id"], "file": upload["path"], "filename": upload["filename"],
-           "map_id": upload["map_id"], "new_map": bool(upload.get("new_map")), "folder": upload.get("folder") or "",
+           "map_id": upload["map_id"], "new_map": bool(upload.get("new_map")), "group": upload.get("group"),
+           "folder": upload.get("folder") or "",
            "new_name": upload.get("new_name"), "replace": upload.get("replace"),
            "odometry": upload.get("odometry") or ODOMETRY[0], "user": upload["user"], "state": "queued", "created": time.time()}
     (jd / "job.json.tmp").write_text(json.dumps(job, indent=2))
@@ -472,7 +537,8 @@ def _worker() -> None:
         target = ["--new-map"] if j.get("new_map") else ["--map", j["map_id"]]
         cmd = [sys.executable, "-u", str(REPO / "add_recording_to_map.py"), j["file"], *target,
                "--job-dir", str(JOBS / jid / "work"), "--odometry", j.get("odometry") or ODOMETRY[0]]
-        default = (_new_map_name(j["filename"], j.get("folder") or "") if j.get("new_map")
+        pending_name = _pending().get(j.get("group") or "", {}).get("name")
+        default = ((pending_name or _new_map_name(j["filename"], j.get("folder") or "")) if j.get("new_map")
                    else _default_name(j["map_id"], j["filename"]))
         cmd += ["--name", j.get("new_name") or default]
         if j.get("replace"):
@@ -480,12 +546,14 @@ def _worker() -> None:
         with open(JOBS / jid / "log.txt", "a") as log:
             log.write(f"\n### run started {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
             log.flush()
-            rc = subprocess.call(cmd, stdout=log, stderr=subprocess.STDOUT, cwd=REPO)
+            # Own process group: a restart stops the job with everything it started (converters, ffmpeg).
+            rc = subprocess.call(cmd, stdout=log, stderr=subprocess.STDOUT, cwd=REPO, start_new_session=True)
         result = JOBS / jid / "work" / "result.json"
         if rc == 0 and result.exists():
             res = json.loads(result.read_text())
             # A merged map goes in its base map's folder; a new map in the folder chosen at upload.
-            folder = j.get("folder") if j.get("new_map") else _folders().get(j["map_id"], "")
+            folder = ((_pending().get(j.get("group") or "", {}).get("folder") or j.get("folder")) if j.get("new_map")
+                      else _folders().get(j["map_id"], ""))
             if folder and res.get("map_id"):
                 _set_folder(res["map_id"], folder)
             _set(jid, state="succeeded", finished=time.time(), result=res)

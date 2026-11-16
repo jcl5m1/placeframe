@@ -99,9 +99,8 @@
           <div id="mapTree" class="tree hidden"></div><input type="hidden" id="map"></div>
         <div id="newBox" class="hidden"><label>Folder for the new map (optional, e.g. <code>office/floor 2</code>)</label>
           <input id="folder" type="text" list="folderList" placeholder="top level"><datalist id="folderList"></datalist>
-          <label style="display:flex;align-items:center;gap:8px;color:var(--ink);margin-top:8px">
-            <input type="checkbox" id="combine" checked> Combine recordings uploaded together into one map</label>
-          <div class="hint">The first recording to finish builds the map; the others are merged into it (their paths must overlap).</div></div></div>
+          <div class="hint">Uploading creates the new map right away (it appears in the map list as “building…”);
+            every recording uploaded to it is part of that map: the first to finish builds it, the others are merged in.</div></div></div></div>
       <div><label id="nameLabel">Name for the updated map (optional)</label><input id="newName" type="text" placeholder="default: original map + N recordings (dates)"></div>
     </div>
     <div id="mapContents" class="contents"></div>
@@ -174,11 +173,14 @@ const openFolders = new Set(JSON.parse(localStorage.getItem('pf_tree_open') || '
 async function loadMaps() {
   allMaps = await (await api('maps')).json();
   const saved = localStorage.getItem('pf_map');
-  const pick = allMaps.find(m => m.id === saved) || allMaps.find(m => m.active) || allMaps[0];
+  const built = saved && saved.startsWith('group:') && allMaps.filter(m => !m.pending && m.group === saved.slice(6))
+    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))[0];
+  const pick = built || allMaps.find(m => m.id === saved) || allMaps.find(m => m.active) || allMaps[0];
   $('folderList').innerHTML = [...new Set(allMaps.map(m => m.folder).filter(Boolean))].sort().map(f => `<option value="${esc(f)}">`).join('');
   selectMap(pick ? pick.id : '');
 }
 function mapLabel(m) {
+  if (m.pending) return `${esc(m.name)}<span class="meta">building… · ${m.recordings} recording${m.recordings === 1 ? '' : 's'}</span>`;
   const what = m.recordings ? `${esc(m.base_name)} + ${m.recordings} recording${m.recordings > 1 ? 's' : ''}` : 'original capture';
   return `${esc(m.name)}<span class="meta">${what}${m.active ? '' : ' · inactive'}</span>`;
 }
@@ -220,6 +222,26 @@ document.querySelectorAll('input[name=target]').forEach(r => r.onchange = () => 
   $('newName').placeholder = isNew ? 'default: X5 recording <date>' : 'default: original map + N recordings (dates)';
   $('replace').closest('label').classList.toggle('hidden', isNew);
 });
+// Starting an upload with "Create a new map" creates the map at once (pending until its first recording is built),
+// selects it, and switches back to adding to it, so every later upload of this session goes into the same map.
+let creatingMap = null;
+function ensureTarget() {
+  if (!newMapMode()) return Promise.resolve($('map').value);
+  creatingMap ??= (async () => {
+    const leaf = $('folder').value.trim().split('/').filter(Boolean).pop();
+    const name = $('newName').value.trim() || `${leaf || 'New map'} ${new Date().toISOString().slice(0, 10)}`;
+    const r = await api('new-maps', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, folder: $('folder').value.trim() }) });
+    if (!r.ok) throw new Error('could not create the new map');
+    const m = await r.json();
+    await loadMaps(); selectMap(m.id);
+    const existing = document.querySelector('input[name=target][value=existing]');
+    existing.checked = true; existing.dispatchEvent(new Event('change'));
+    $('newName').value = '';
+    return m.id;
+  })().finally(() => { creatingMap = null; });
+  return creatingMap;
+}
 async function moveToFolder(id) {
   const m = allMaps.find(x => x.id === id);
   const folder = prompt('Folder for "' + (m ? m.name : id) + '" (use / for subfolders; empty = top level)', m ? m.folder : '');
@@ -279,8 +301,9 @@ function startUpload(file) {
   const prior = file._server.status;
   if (prior === 'uploading') { alert(file.name + ' is already being uploaded (from this or another browser).'); return; }
   if (prior === 'uploaded' && !confirm(file.name + ' was already uploaded. Upload it again as a new job?')) return;
-  const st = { key, file, offset: 0, paused: false, running: false, el: null, id: null, t0: 0, b0: 0, retries: 0 };
-  uploads.set(key, st); render(st); run(st);
+  const st = { key, file, target: null, offset: 0, paused: false, running: false, el: null, id: null, t0: 0, b0: 0, retries: 0 };
+  uploads.set(key, st); render(st);
+  ensureTarget().then(target => { st.target = target; run(st); }).catch(e => { st.error = e.message; render(st); });
   inspect(file).then(() => render(st));
 }
 
@@ -388,8 +411,8 @@ async function run(st) {
     if (!st.id) {
       const r = await api('uploads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
         filename: st.file.name, size: st.file.size, last_modified: st.file.lastModified,
-        map_id: newMapMode() ? null : $('map').value, new_map: newMapMode(), folder: $('folder').value.trim(),
-        combine: $('combine').checked,
+        map_id: st.target, new_map: false, folder: $('folder').value.trim(),
+
         new_name: $('newName').value.trim(), replace: $('replace').checked,
         odometry: $('odometry').value }) });
       if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
@@ -452,13 +475,21 @@ async function pollJobs() {
   } catch (_) {}
   jobTimer = setTimeout(pollJobs, 5000);
 }
+function groupLine(j) {
+  if (!j.group) return '';
+  const target = j.map_id && allMaps.find(m => m.id === j.map_id);
+  const role = j.combined_into ? `merging into the group’s map${target ? ' “' + esc(target.name) + '”' : ''}`
+    : j.state === 'queued' ? 'builds the map if no recording of the group has yet, otherwise merges into it'
+    : 'builds the new map';
+  return `<div class="meta">New map group ${esc(j.group)}${j.folder ? ' · folder ' + esc(j.folder) : ''} · ${role}</div>`;
+}
 function jobHtml(j) {
   const cls = { succeeded: 'ok', failed: 'bad', running: '', queued: 'meta' }[j.state] || '';
   const stages = j.stages.map(s => `<span class="stage ${j.done.includes(s) ? 'done' : s === j.current ? 'cur' : ''}">${s}</span>`).join('');
   const res = j.result ? `<div class="ok">New map <b>${esc(j.result.name)}</b> is live — ${j.result.registered_images}/${j.result.total_images} images, ${(j.result.points || 0).toLocaleString()} points${j.result.replaced ? '; old map deactivated' : ''}.</div>` : '';
   return `<div class="item"><div class="top"><span class="name">${esc(j.filename)}</span>
       <span class="meta ${cls}">${esc(j.odometry || 'openvio')} · ${j.state}${j.state === 'failed' ? ` · <button class="ghost" data-retry="${j.id}">Retry</button>` : ''}</span></div>
-    <div class="stages">${stages}</div>${j.held ? `<div class="warn">${esc(j.held)}</div>` : ''}${res}${j.error ? `<div class="bad">${esc(j.error)}</div>` : ''}
+    ${groupLine(j)}<div class="stages">${stages}</div>${j.held ? `<div class="warn">${esc(j.held)}</div>` : ''}${res}${j.error ? `<div class="bad">${esc(j.error)}</div>` : ''}
     <details><summary class="meta">log</summary><pre>${esc(j.log.join('\n'))}</pre></details></div>`;
 }
 

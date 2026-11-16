@@ -157,7 +157,7 @@ def run_openvio(job: Path) -> None:
     yaml = (job / "openvio/x5.yaml").read_text()
     rows = re.findall(r"^\s+- \[(.*)\]$", yaml, re.M)[:4]
     imu_from_camera = "[" + ",".join("[" + r + "]" for r in rows) + "]"
-    sh(["docker", "run", "--rm", "-v", f"{job}:/job", OPENVIO_IMAGE, "build/bin/vio", "odometry",
+    sh(["docker", "run", "--rm", "--label", "pf-mapper-job=1", "-v", f"{job}:/job", OPENVIO_IMAGE, "build/bin/vio", "odometry",
         "--dataset_path", "/job/openvio", "--config_path", "config/panoair.yaml", "--output_path", "/job/ov.tum",
         "--camera.mask_rectangles=[]", "--camera.params=[0.0]", "--camera.polar_exclusion_ratio=0.12",
         f"--rig.imu_from_camera={imu_from_camera}", "--rig.clock_offset=0.0", *OPENVIO_NOISE])
@@ -173,7 +173,7 @@ def run_openvins(job: Path) -> None:
               "_verbosity:=WARNING _config_path:=/data/config/estimator_config.yaml _use_stereo:=false "
               "_max_cameras:=2 _save_total_state:=true _filepath_est:=/data/ov_state.txt "
               "_filepath_std:=/data/ov_state_std.txt _filepath_gt:=/data/ov_gt.txt")
-    sh(["docker", "run", "--rm", "--user", f"{os.getuid()}:{os.getgid()}", "-e", "HOME=/tmp", "-v", f"{d}:/data",
+    sh(["docker", "run", "--rm", "--label", "pf-mapper-job=1", "--user", f"{os.getuid()}:{os.getgid()}", "-e", "HOME=/tmp", "-v", f"{d}:/data",
         OPENVINS_IMAGE, "bash", "-c", rosrun])
     # ov_state rows: t, q_GtoI (JPL x y z w; equals Hamilton world_from_imu), p_IinG, ... Bag time = video + 1 s.
     rows = []

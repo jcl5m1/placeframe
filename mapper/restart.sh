@@ -5,7 +5,13 @@ set -u
 # service first (so its worker can't mark the interrupted job failed), then the job's process
 for pid in $(ps -eo pid,args | awk '/uvicorn mapper.server:app/ && !/awk/ {print $1}'); do kill "$pid"; done
 sleep 2
-for pid in $(ps -eo pid,args | awk '/python -u .*add_recording_to_map.py/ && !/awk/ {print $1}'); do kill "$pid"; done
+# Stop each job with all its children: jobs run in their own process group; earlier jobs (started before that) and
+# their converters are also caught by path. Job containers (OpenVIO/OpenVINS) are labelled pf-mapper-job.
+for pid in $(ps -eo pid,args | awk '/python -u .*add_recording_to_map.py/ && !/awk/ {print $1}'); do
+  pgid=$(ps -o pgid= -p "$pid" | tr -d ' '); [ -n "$pgid" ] && kill -TERM -- "-$pgid" 2>/dev/null; kill "$pid" 2>/dev/null
+done
+for pid in $(ps -eo pid,args | awk '/pf_mapper\/(jobs|uploads)\// && /(placeframe-insta360\/.*\.py|ffmpeg)/ && !/awk/ {print $1}'); do kill "$pid" 2>/dev/null; done
+sg docker -c "docker ps -q --filter label=pf-mapper-job=1" | xargs -r -I{} sg docker -c "docker kill {}" >/dev/null 2>&1
 sleep 2
 python3 - <<'PY'
 import json
