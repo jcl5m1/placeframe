@@ -34,6 +34,7 @@ import httpx
 import numpy as np
 from scipy.spatial.transform import Rotation
 
+import gps_placement
 from insta360_to_placeframe import parse_views
 from upload_to_placeframe import choose_reconstruction_options, get_token, saved_credentials
 
@@ -49,7 +50,7 @@ ODOMETRY = ("openvio", "openvins")
 
 def stages(odometry: str = "openvio") -> list[str]:
     return ["calibrate", f"{odometry}-export", f"{odometry}-run", "stitch", "views", "capture", "register", "merge",
-            "reconstruct", "publish"]
+            "reconstruct", "publish", "geolocate"]
 
 
 STAGES = stages()
@@ -112,11 +113,40 @@ def main() -> None:
     run_stage("merge", lambda: merge(api, job, args.map))
     run_stage("reconstruct", lambda: reconstruct(api, job, args.map, args.name))
     run_stage("publish", lambda: publish(api, job, args.map, args.replace))
+    run_stage("geolocate", lambda: geolocate(api, job, insv))
     result = json.loads((job / "result.json").read_text())
     log(f"== COMPLETE new map {result['map_id']} '{result['name']}'")
 
 
 # --------------------------------------------------------------------------- stages
+
+
+def geolocate(api: "PlaceframeApi", job: Path, insv: str) -> None:
+    """Put the new map on the globe from the recording's GPS, so clients can find it by location. The X5 has no GPS
+    receiver: fixes exist only when the recording was shot from the Insta360 phone app with GPS on, or from a GPS
+    remote (see GPS.md). A map that is already placed (merges inherit the base map's placement) is left alone; the
+    recording's GPS is only compared against it. Never fails the job."""
+    result = json.loads((job / "result.json").read_text())
+    try:
+        fixes = gps_placement.insv_gps(Path(insv))
+    except Exception as e:  # noqa: BLE001 - a GPS problem must not fail a finished merge
+        log(f"GPS: could not read fixes ({e!r})")
+        fixes = []
+    fix = gps_placement.median_fix(fixes)
+    (job / "gps.json").write_text(json.dumps({"fixes": fixes, "median": fix}, indent=1))
+    if not fix:
+        log("GPS: none in this recording (shoot from the Insta360 app with GPS on to record it); map not placed")
+        result["gps"] = None
+    else:
+        new_map = api.get(f"/localization-maps/{result['map_id']}")
+        if gps_placement.is_placed(new_map):
+            log(f"GPS: {fix['n']} fixes, median {fix['lat']:.6f},{fix['lon']:.6f}; map already placed, left as is")
+            result["gps"] = fix | {"placed": False}
+        else:
+            gps_placement.place_map(api, result["map_id"], fix["lat"], fix["lon"], fix["alt"])
+            log(f"GPS: placed map at {fix['lat']:.6f},{fix['lon']:.6f} (median of {fix['n']} fixes; heading unknown)")
+            result["gps"] = fix | {"placed": True}
+    (job / "result.json").write_text(json.dumps(result, indent=2))
 
 
 def run_openvio(job: Path) -> None:

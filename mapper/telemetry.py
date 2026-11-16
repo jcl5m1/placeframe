@@ -245,7 +245,7 @@ class Telemetry:
             wd = jf.parent / "work"
             odo = j.get("odometry") or "openvio"
             names = ["calibrate", f"{odo}-export", f"{odo}-run", "stitch", "views", "capture", "register", "merge",
-                     "reconstruct", "publish"]
+                     "reconstruct", "publish", "geolocate"]
             done = [s for s in names if (wd / f".done-{s}").exists()]
             cur = next((s for s in names if s not in done), None) if j["state"] == "running" else None
             rec_s = _recording_s(wd) or _guess_recording_s(Path(j["file"]))

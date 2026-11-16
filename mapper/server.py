@@ -53,7 +53,7 @@ ODOMETRY = ("openvio", "openvins")  # add_recording_to_map.py --odometry; first 
 
 def stages(odometry: str) -> list[str]:  # mirrors add_recording_to_map.stages()
     return ["calibrate", f"{odometry}-export", f"{odometry}-run", "stitch", "views", "capture", "register", "merge",
-            "reconstruct", "publish"]
+            "reconstruct", "publish", "geolocate"]
 
 app = FastAPI(title="Placeframe map updater")
 _token_cache: dict[str, tuple[float, str]] = {}

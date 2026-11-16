@@ -24,6 +24,7 @@ from pathlib import Path
 import numpy as np
 from scipy.spatial.transform import Rotation, Slerp
 
+import gps_placement
 from insta360_to_placeframe import RIG_ID, parse_views
 from stitch_dualfisheye import down_in_lens0, imu_gravity, level_rotation
 from vio_dualfisheye import detect_label_shift
@@ -118,6 +119,11 @@ def main() -> None:
             tar.addfile(ti, io.BytesIO(data))
 
         add_bytes("manifest.json", json.dumps(manifest, indent=2).encode())
+        location = capture_location(args.insv)
+        if location:
+            # Placeframe places a map built from this capture on the globe (see GPS.md). Capture worlds here are
+            # OpenCV y-down, so map up is -y.
+            add_bytes("location.json", json.dumps(location | {"map_up_axis": "-y"}).encode())
         add_bytes(f"{RIG_ID}/frames.csv", ("\n".join(rows) + "\n").encode())
         for lab in used:
             for vw in views:
@@ -157,6 +163,23 @@ def first_matrix(yaml_path: str) -> np.ndarray:
     rows = re.findall(r"^\s+- \[(.*)\]$", Path(yaml_path).expanduser().read_text(), re.M)[:3]
     return np.array([[float(x) for x in r.split(",")][:3] for r in rows])
 
+
+
+def capture_location(insv: str) -> dict | None:
+    """The recording's location from its GPS (median of the fixes), or None when it has none: the X5 records GPS
+    only when shot from the Insta360 phone app with GPS on, or from a GPS remote."""
+    try:
+        fixes = gps_placement.insv_gps(Path(insv))
+    except Exception as e:  # noqa: BLE001 - missing GPS must never stop a conversion
+        print(f"GPS: could not read fixes ({e!r})")
+        return None
+    fix = gps_placement.median_fix(fixes)
+    if not fix:
+        print("GPS: none in this recording")
+        return None
+    print(f"GPS: {fix['n']} fixes, median {fix['lat']:.6f},{fix['lon']:.6f}")
+    return {"latitude": fix["lat"], "longitude": fix["lon"], "altitude": fix["alt"], "fixes": fix["n"],
+            "source": "insta360 .insv GPS (phone app or GPS remote)"}
 
 if __name__ == "__main__":
     main()
