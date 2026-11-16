@@ -220,7 +220,16 @@ def run_colmap_reconstruction(
     frame_positions = empty((frame_count, 3), dtype=float32)
     frame_orientations = empty((frame_count, 4), dtype=float32)
 
-    for frame_index, frame in enumerate(cast(ValuesView[Frame], best_reconstruction.frames.values())):  # type: ignore
+    # Frames are written in capture order (rig, then timestamp) rather than registration order, so
+    # consumers that connect consecutive frame positions draw the capture trajectory.
+    frame_names: dict[int, str] = {}
+    for image in best_reconstruction.images.values():
+        frame_names[image.frame_id] = min(frame_names.get(image.frame_id, image.name), image.name)
+    frames_in_capture_order = sorted(
+        cast(ValuesView[Frame], best_reconstruction.frames.values()),  # type: ignore
+        key=lambda frame: _capture_order_key(frame_names.get(frame.frame_id, "")),
+    )
+    for frame_index, frame in enumerate(frames_in_capture_order):
         # Convert from rig_from_world to world_from_rig
         rig_from_world = cast(Rigid3d, frame.rig_from_world)
         world_from_rig_rotation_matrix = rig_from_world.rotation.matrix().T
@@ -271,3 +280,10 @@ class _IncrementalMappingProgress:
     def on_next_image(self) -> None:
         self._registered += 1
         self._publisher.on_progress(self._registered, self._attempt)
+
+
+def _capture_order_key(image_name: str) -> tuple[str, int, str]:
+    # Image names are "<rig_id>/<camera_id>/<frame_timestamp>.jpg".
+    parts = image_name.split("/")
+    stem = parts[-1].rsplit(".", 1)[0] if parts else ""
+    return (parts[0] if parts else "", int(stem) if stem.isdigit() else -1, image_name)
