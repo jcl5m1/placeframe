@@ -30,6 +30,8 @@ def main() -> None:
     ap.add_argument("--map-id", action="append", required=True)
     ap.add_argument("--camera", required=True, help="camera_config JSON (or path to conversion.json with 'camera')")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--top-k", type=int, default=None, help="retrieval_top_k (server default 12)")
+    ap.add_argument("--ransac", type=float, default=None, help="ransac_threshold in px (server default 8)")
     ap.add_argument("--out", type=Path)
     a = ap.parse_args()
     cam = json.loads(Path(a.camera).read_text())["camera"] if Path(a.camera).exists() else json.loads(a.camera)
@@ -37,18 +39,20 @@ def main() -> None:
     if a.limit:
         rows = rows[:: max(1, len(rows) // a.limit)][: a.limit]
     api = PlaceframeApi()
-    results = [localize(api, r, a.map_id, cam) for r in rows]
+    tuning = {k: v for k, v in (("retrieval_top_k", a.top_k), ("ransac_threshold", a.ransac)) if v is not None}
+    results = [localize(api, r, a.map_id, cam, tuning) for r in rows]
     report = summarize(results)
     print(json.dumps(report, indent=1))
     if a.out:
         a.out.write_text(json.dumps({"report": report, "results": results}, indent=1))
 
 
-def localize(api: PlaceframeApi, q: dict, map_ids: list[str], cam: dict) -> dict:
+def localize(api: PlaceframeApi, q: dict, map_ids: list[str], cam: dict, tuning: dict | None = None) -> dict:
     api._auth()
     t0 = time.monotonic()
     r = api.client.post(api.server + "/localize", headers={"X-Placeframe-Replay": "1"},
-                        data={"map_ids": json.dumps(map_ids), "camera_config": json.dumps(cam), "axis_convention": "OPENCV"},
+                        data={"map_ids": json.dumps(map_ids), "camera_config": json.dumps(cam), "axis_convention": "OPENCV",
+                              **{k: str(v) for k, v in (tuning or {}).items()}},
                         files={"image": ("q.jpg", Path(q["image"]).read_bytes(), "image/jpeg")})
     ms = (time.monotonic() - t0) * 1000
     out = {"image": q["image"], "ms": round(ms, 1), "status": r.status_code}
