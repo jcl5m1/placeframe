@@ -163,6 +163,21 @@ def insv_gps(path: Path) -> list[dict]:
     return fixes
 
 
+def insv_metadata(path: Path) -> dict:
+    """Camera model and recording facts from an .insv's metadata, for showing a recording before upload."""
+    import telemetry_parser  # local import: heavy, and only needed here
+
+    p = telemetry_parser.Parser(str(path))
+    meta = {}
+    for block in p.telemetry():
+        if "Default" in block and "Metadata" in block["Default"]:
+            meta = block["Default"]["Metadata"] or {}
+            break
+    gps_field = str(meta.get("gps") or "")
+    return {"camera": p.model or p.camera, "gps_metadata": bool(gps_field.strip("0")),
+            "gps_sources": meta.get("gps_sources") or [], "first_gps_timestamp": meta.get("first_gps_timestamp")}
+
+
 def _fix(row) -> dict | None:
     if not isinstance(row, dict):
         return None

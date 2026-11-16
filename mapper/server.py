@@ -21,8 +21,10 @@ import json
 import os
 import queue
 import re
+import asyncio
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -42,6 +44,8 @@ ALLOWED_EXT = {".insv"}
 
 sys.path.insert(0, str(REPO))
 from upload_to_placeframe import saved_credentials  # noqa: E402
+
+import gps_placement  # noqa: E402
 
 from .telemetry import Telemetry  # noqa: E402
 
@@ -207,6 +211,33 @@ def _save(meta: dict) -> None:
 def _offset(meta: dict) -> int:
     p = UPLOADS / f"{meta['id']}.part"
     return p.stat().st_size if p.exists() else 0
+
+
+@app.post("/api/inspect")
+async def inspect_recording(request: Request, x_file_size: int = Header(...), x_head_len: int = Header(...),
+                            who: str = Depends(user)):
+    """Check a recording for GPS before uploading it. Insta360 keeps its metadata (gyro, exposure, GPS) in a trailer
+    at the end of the .insv; the browser sends the first x_head_len bytes and the trailer (the rest of the body),
+    which are written into a sparse file of the original size (no disk used for the gap) and parsed as usual."""
+    body = await request.body()
+    if not 0 < x_head_len <= len(body) or x_file_size < len(body) or len(body) > 96 * 2**20:
+        raise HTTPException(400, "bad inspection request")
+    return await asyncio.to_thread(_inspect, body[:x_head_len], body[x_head_len:], x_file_size)
+
+
+def _inspect(head: bytes, tail: bytes, size: int) -> dict:
+    with tempfile.NamedTemporaryFile(suffix=".insv", dir=DATA) as t:
+        t.write(head)
+        t.truncate(size)
+        t.seek(size - len(tail))
+        t.write(tail)
+        t.flush()
+        try:
+            fixes = gps_placement.insv_gps(Path(t.name))
+            meta = gps_placement.insv_metadata(Path(t.name))
+        except Exception as e:  # noqa: BLE001 - report unreadable files to the page instead of failing
+            return {"ok": False, "error": f"could not read the recording's metadata ({type(e).__name__})"}
+    return {"ok": True, "gps_fixes": len(fixes), "gps": gps_placement.median_fix(fixes), **meta}
 
 
 @app.post("/api/uploads")

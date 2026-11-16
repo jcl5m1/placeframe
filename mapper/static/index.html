@@ -46,6 +46,12 @@
   .pill.run { color:var(--accent); border-color:rgba(76,194,255,.45); } .pill.ok { color:var(--ok); border-color:rgba(62,207,142,.35); }
   .pill.wait { color:var(--warn); border-color:rgba(245,184,75,.4); }
   .bar.thin { height:6px; }
+  .light { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; vertical-align:-1px; background:#3a3f4a; }
+  .light.ok { background:var(--ok); box-shadow:0 0 6px var(--ok); } .light.none { background:#5b6270; }
+  .light.err { background:var(--bad); } .light.wait { background:var(--warn); animation:pulse 1s infinite alternate; }
+  @keyframes pulse { from { opacity:.35; } to { opacity:1; } }
+  .sdrow { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:7px 0; border-top:1px solid var(--line); }
+  .sdrow:first-child { border-top:0; }
   .contents { background:#0f1218; border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin-top:12px; font-size:13px; }
   .contents:empty { display:none; }
   .contents ol { margin:6px 0 0; padding-left:20px; } .contents li { margin:3px 0; }
@@ -88,7 +94,12 @@
     <label style="display:flex;align-items:center;gap:8px;color:var(--ink);margin-top:12px">
       <input type="checkbox" id="replace" checked> Make the updated map the active one (the old map is kept, just deactivated)</label>
     <div class="drop" id="drop">Drop <b>.insv</b> files here or click to choose<input id="file" type="file" accept=".insv" multiple class="hidden"></div>
-    <div class="hint">Tip: start and end the new recording in an area the map already covers, so it can be placed in the map.</div>
+    <div style="margin-top:10px"><button class="ghost" id="sdBtn">Check SD card…</button>
+      <span class="hint">choose the camera's folder (e.g. <code>DCIM/Camera01</code>) to see which recordings carry GPS</span>
+      <input id="sdDir" type="file" webkitdirectory multiple class="hidden"></div>
+    <div id="sdList" class="contents"></div>
+    <div class="hint">Tip: start and end the new recording in an area the map already covers, so it can be placed in the map.
+      For GPS, record from the Insta360 phone app with its GPS switch on (see GPS.md).</div>
     <div id="uploads" style="margin-top:8px"></div>
   </section>
 
@@ -189,7 +200,69 @@ function startUpload(file) {
   if (uploads.has(key) && uploads.get(key).running) return;
   const st = { key, file, offset: 0, paused: false, running: false, el: null, id: null, t0: 0, b0: 0, retries: 0 };
   uploads.set(key, st); render(st); run(st);
+  inspect(file).then(() => render(st));
 }
+
+// ---------------------------------------------------------------- GPS check before upload
+// Insta360 keeps its metadata (GPS included) in a trailer at the end of the .insv: the server only needs the first
+// few MB and that trailer, so a recording is checked in seconds without uploading it.
+const HEAD_BYTES = 4 * 1024 * 1024, MAGIC = '8db42d694ccc418790edff439fe026bf';
+const inspections = new Map();   // file key -> promise of the server's answer
+let inspectChain = Promise.resolve();
+const fileKey = f => f.name + '|' + f.size + '|' + f.lastModified;
+function inspect(file) {
+  const k = fileKey(file);
+  if (!inspections.has(k)) {
+    const job = inspectChain.then(() => inspectNow(file)).catch(e => ({ ok: false, error: String(e.message || e) }));
+    inspectChain = job.then(() => {});   // one at a time: each sends ~20-40 MB
+    inspections.set(k, job);
+    job.then(r => { inspections.set(k, Promise.resolve(r)); file._gps = r; });
+  }
+  return inspections.get(k);
+}
+async function inspectNow(file) {
+  const end = new Uint8Array(await file.slice(Math.max(0, file.size - 40)).arrayBuffer());
+  if (end.length < 40 || new TextDecoder().decode(end.slice(8)) !== MAGIC) return { ok: false, error: 'no Insta360 metadata trailer' };
+  const extra = new DataView(end.buffer).getUint32(0, true);
+  const head = Math.min(HEAD_BYTES, file.size), tailStart = Math.max(head, file.size - extra - 4096);
+  const body = new Blob([file.slice(0, head), file.slice(tailStart)]);
+  const r = await api('inspect', { method: 'POST', body,
+    headers: { 'Content-Type': 'application/octet-stream', 'X-File-Size': String(file.size), 'X-Head-Len': String(head) } });
+  if (!r.ok) return { ok: false, error: (await r.json().catch(() => ({}))).detail || r.statusText };
+  return r.json();
+}
+function gpsLight(file) {
+  const r = file._gps;
+  if (!r) return '<span class="light wait" title="checking for GPS…"></span>';
+  if (!r.ok) return `<span class="light err" title="${esc(r.error || 'check failed')}"></span>`;
+  if (r.gps_fixes) return `<span class="light ok" title="GPS: ${r.gps_fixes} fixes, ${r.gps.lat.toFixed(5)}, ${r.gps.lon.toFixed(5)}"></span>`;
+  return '<span class="light none" title="no GPS in this recording"></span>';
+}
+function gpsText(file) {
+  const r = file._gps;
+  if (!r) return '<span class="meta">checking…</span>';
+  if (!r.ok) return `<span class="bad">${esc(r.error || 'check failed')}</span>`;
+  if (r.gps_fixes) return `<span class="ok">GPS · ${r.gps_fixes} fixes · ${r.gps.lat.toFixed(5)}, ${r.gps.lon.toFixed(5)}</span>`;
+  return '<span class="meta">no GPS</span>';
+}
+$('sdBtn').onclick = () => $('sdDir').click();
+$('sdDir').onchange = e => {
+  const files = [...e.target.files].filter(f => f.name.toLowerCase().endsWith('.insv') && !f.name.startsWith('.'))
+    .sort((a, b) => b.name.localeCompare(a.name));
+  e.target.value = '';
+  const list = $('sdList');
+  if (!files.length) { list.innerHTML = '<span class="meta">No .insv recordings in that folder.</span>'; return; }
+  const draw = () => {
+    const withGps = files.filter(f => f._gps && f._gps.gps_fixes).length, checked = files.filter(f => f._gps).length;
+    list.innerHTML = `<div class="meta" style="margin-bottom:6px">${files.length} recording(s) · ${checked} checked · ${withGps} with GPS</div>`
+      + files.map((f, i) => `<div class="sdrow"><span>${gpsLight(f)}<span class="name">${esc(f.name)}</span>
+          <span class="meta"> · ${mb(f.size)} · ${new Date(f.lastModified).toLocaleString()}</span><br>${gpsText(f)}</span>
+          <button class="ghost" data-i="${i}">Upload</button></div>`).join('');
+    list.querySelectorAll('button[data-i]').forEach(b => b.onclick = () => startUpload(files[+b.dataset.i]));
+  };
+  draw();
+  files.forEach(f => inspect(f).then(draw));
+};
 async function run(st) {
   st.running = true; st.paused = false; render(st);
   try {
@@ -236,7 +309,7 @@ function render(st) {
     : st.done ? `<span class="ok">uploaded — processing queued</span>`
     : st.paused ? 'paused' : st.note ? `<span class="warn">${esc(st.note)}</span>`
     : st.running ? `${mb(rate)}/s · ${fmtT(eta)} left${st.resumed ? ' · resumed' : ''}` : '';
-  st.el.innerHTML = `<div class="top"><span class="name">${esc(st.file.name)}</span>
+  st.el.innerHTML = `<div class="top"><span class="name">${gpsLight(st.file)}${esc(st.file.name)}</span>
       <span class="meta">${mb(st.offset)} / ${mb(st.file.size)} (${pct.toFixed(1)}%)</span></div>
     <div class="bar"><div style="width:${pct}%"></div></div>
     <div class="top"><span class="meta">${status}</span><span>
