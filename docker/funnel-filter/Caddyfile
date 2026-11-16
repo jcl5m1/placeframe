@@ -1,0 +1,39 @@
+# Front door for Tailscale Serve/Funnel (tailscale -> 127.0.0.1:58082 -> gateway 127.0.0.1:58081).
+# Tailscale adds Tailscale-User-Login only for tailnet clients and Tailscale-Funnel-Request for
+# public Funnel clients, so admin UIs are reachable from the tailnet but 403 from the internet.
+{
+	admin off
+	auto_https off
+	servers {
+		trusted_proxies static 127.0.0.1/32 ::1/128
+	}
+}
+
+http://:58082 {
+	bind 127.0.0.1
+
+
+	# Map updater (resumable .insv uploads -> merge into an existing map). Requires a Placeframe login.
+	redir /mapper /mapper/
+	handle_path /mapper/* {
+		reverse_proxy 127.0.0.1:8150 {
+			flush_interval -1
+		}
+	}
+
+	handle {
+		@block_public {
+			path /auth/admin /auth/admin/* /auth/realms/master /auth/realms/master/* /cloudbeaver /cloudbeaver/* /grafana /grafana/*
+			not header Tailscale-User-Login *
+		}
+		@block_funnel {
+			path /auth/admin /auth/admin/* /auth/realms/master /auth/realms/master/* /cloudbeaver /cloudbeaver/* /grafana /grafana/*
+			header Tailscale-Funnel-Request *
+		}
+		respond @block_public "Forbidden: admin pages are tailnet-only" 403
+		respond @block_funnel "Forbidden: admin pages are tailnet-only" 403
+		reverse_proxy 127.0.0.1:58081 {
+			flush_interval -1
+		}
+	}
+}

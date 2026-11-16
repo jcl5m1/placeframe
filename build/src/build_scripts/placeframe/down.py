@@ -38,6 +38,7 @@ def down(
         "docker compose "
         "-f compose.yml "
         f"{f'-f compose.{gpu}.yml ' if gpu != 'none' else ''}"
+        f"{'-f compose.local.yml ' if Path('compose.local.yml').exists() else ''}"
         "--env-file .env "
         f"--env-file {LOCK_FILE} "  # Needed so compose won't error on missing variables, even though they are irrelevant for 'down'
         "down --remove-orphans"

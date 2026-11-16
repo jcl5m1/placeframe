@@ -1,0 +1,102 @@
+
+# Bounded container logs (COLMAP/glog in the reconstructor is chatty): 3 x 50 MB per service.
+x-bounded-logs: &bounded-logs
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+# Local-only override (loaded by `uv run up/down` when present).
+services:
+  # Expose the gateway's plain-HTTP "tunnel mode" listener on loopback so Tailscale
+  # Serve/Funnel can front it with a real *.ts.net HTTPS certificate (replaces ngrok).
+  gateway:
+    logging: *bounded-logs
+    ports:
+      - "127.0.0.1:58081:8080"
+
+  # MinIO deleted minio/minio and minio/mc from Docker Hub (and Quay) in Sept 2026, so the
+  # digests pinned in .env.lock no longer resolve. Use Chainguard's free builds instead
+  # (-dev variants include sh + wget, which the stock healthcheck/entrypoints need).
+  minio:
+    image: "cgr.dev/chainguard/minio@sha256:5735e8125c4af7dd310dc5780508bfb850f0b68783a1a56089b5c64316a8f603"
+    user: "0:0"
+    healthcheck:
+      test: [ "CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9000/minio/health/ready" ]
+  initialize-minio:
+    image: "cgr.dev/chainguard/minio-client@sha256:e1f3f37e8b13f34be49494f441ca01ff7be4e05d7cf04bf26681b0fe380852e1"
+  minio-logger:
+    image: "cgr.dev/chainguard/minio-client@sha256:e1f3f37e8b13f34be49494f441ca01ff7be4e05d7cf04bf26681b0fe380852e1"
+
+  # Tailscale Serve only answers connections arriving via tailscale0 or from the host itself, so
+  # containers calling https://${PUBLIC_DOMAIN} (token fetches etc.) get "connection refused".
+  # This host-network relay listens on the docker bridge IP and forwards to the tailnet IP from the
+  # host side; TLS passes through untouched so the *.ts.net certificate still validates.
+  ts-relay:
+    image: "alpine/socat@sha256:71131702f671a88b3808a70b7330f9679cd9b9933adcafadc191508edfe55bba"
+    network_mode: host
+    restart: unless-stopped
+    command: "TCP-LISTEN:443,bind=172.17.0.1,fork,reuseaddr TCP:100.87.240.10:443"
+  api:
+    logging: *bounded-logs
+    extra_hosts: ["${PUBLIC_DOMAIN:?err}:172.17.0.1"]
+    # Local patch: record every /localize request (image, parameters, response, latency) for replay —
+    # localization metrics, regression tests and per-client load simulation (placeframe-insta360/replay_localizations.py).
+    # Unset LOCALIZATION_RECORD_DIR to disable.
+    environment:
+      LOCALIZATION_RECORD_DIR: /recordings
+      # Reap leases whose worker stopped heart-beating (workers refresh every minute) after 10 min, so jobs
+      # on preempted rented workers are re-queued quickly. Upstream default: 30.
+      LEASE_TIMEOUT_MINUTES: "10"
+      # Put timed-out jobs back on the queue (retried by the next worker) instead of failing them, for jobs
+      # younger than 24 h. leases.py also commits the reap on its own (upstream rolls it back when the queue is empty).
+      LEASE_REQUEUE: "1"
+    volumes:
+      - ./docker/api/src/routers/localization.py:/app/docker/api/src/routers/localization.py:ro
+      - ./docker/api/src/routers/leases.py:/app/docker/api/src/routers/leases.py:ro
+      - /mnt/hdd12t/placeframe_scratch/localization_recordings:/recordings
+  reconstructor-cuda:
+    logging: *bounded-logs
+    # Fleet worker image (placeframe-insta360/gpu/Dockerfile.worker): the pinned upstream reconstructor image +
+    # pycolmap built with CUDA (GPU bundle adjustment via Ceres/cuDSS). Built locally; remove to go back upstream.
+    image: placeframe-worker:local
+    environment:
+      # The home worker is not preempted: skip stage checkpoint uploads (rented fleet workers keep them on).
+      RECONSTRUCTOR_CHECKPOINTS: "0"
+    extra_hosts: ["${PUBLIC_DOMAIN:?err}:172.17.0.1"]
+    # Local patches (upstream-PR candidates), mounted over the installed package — no image rebuild:
+    #  pairs.py  — panoramic rigs (e.g. 360 cameras split into pinhole views): pair frames by proximity
+    #              only and match just the views whose fields of view overlap; other rigs unchanged.
+    #  colmap.py — write frame_poses.npz in capture order so clients draw the real trajectory.
+    volumes:
+      - ./docker/reconstructor/src/reconstructor/pairs.py:/opt/uv/venv/lib/python3.13/site-packages/reconstructor/pairs.py:ro
+      - ./docker/reconstructor/src/reconstructor/colmap.py:/opt/uv/venv/lib/python3.13/site-packages/reconstructor/colmap.py:ro
+      #  main.py   — refresh the worker's access token in the background during long jobs (multi-hour maps
+      #              otherwise finish with an expired token and can't report succeed).
+      - ./docker/reconstructor/src/reconstructor/main.py:/opt/uv/venv/lib/python3.13/site-packages/reconstructor/main.py:ro
+      #  prior_mapper.py — optional mapping from capture-time poses + pose-prior bundle adjustment (much faster
+      #              than growing the map frame by frame); chosen per job by local/reconstructor-mapper.json.
+      - ./docker/reconstructor/src/reconstructor/prior_mapper.py:/opt/uv/venv/lib/python3.13/site-packages/reconstructor/prior_mapper.py:ro
+      - ./local/reconstructor-mapper.json:/etc/placeframe/mapper.json:ro
+      #  run_reconstruction.py + checkpoints.py — stage checkpoints (features, matches) for preemptible workers
+      #              (on only with RECONSTRUCTOR_CHECKPOINTS=1); progress_publisher.py — lease heartbeat.
+      - ./docker/reconstructor/src/reconstructor/run_reconstruction.py:/opt/uv/venv/lib/python3.13/site-packages/reconstructor/run_reconstruction.py:ro
+      - ./docker/reconstructor/src/reconstructor/checkpoints.py:/opt/uv/venv/lib/python3.13/site-packages/reconstructor/checkpoints.py:ro
+      - ./docker/reconstructor/src/reconstructor/progress_publisher.py:/opt/uv/venv/lib/python3.13/site-packages/reconstructor/progress_publisher.py:ro
+  localizer-cuda:
+    logging: *bounded-logs
+    extra_hosts: ["${PUBLIC_DOMAIN:?err}:172.17.0.1"]
+  grafana:
+    extra_hosts: ["${PUBLIC_DOMAIN:?err}:172.17.0.1"]
+  state-sync:
+    extra_hosts: ["${PUBLIC_DOMAIN:?err}:172.17.0.1"]
+
+  # Filters public (Funnel) traffic before it reaches the gateway: admin UIs (Keycloak admin,
+  # CloudBeaver, Grafana — which allows anonymous Admin) are tailnet-only. Tailscale Serve/Funnel
+  # points at 127.0.0.1:58082.
+  funnel-filter:
+    logging: *bounded-logs
+    image: "caddy@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0"
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./docker/funnel-filter/Caddyfile:/etc/caddy/Caddyfile:ro
