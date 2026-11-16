@@ -15,6 +15,8 @@
   canvas.dragging { cursor:grabbing; }
   h1 { font-size:15px; margin:0 0 2px; }
   .sub { color:var(--muted); font-size:12px; margin-bottom:12px; }
+  .back { display:inline-block; margin-bottom:10px; padding:5px 10px; border:1px solid var(--line); border-radius:6px; color:var(--ink); text-decoration:none; font-size:12px; }
+  .back:hover { border-color:var(--accent); color:var(--accent); }
   .group { border-top:1px solid var(--line); padding:10px 0; }
   .group h2 { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:0 0 8px; font-weight:600; }
   label { display:flex; align-items:center; gap:8px; margin:6px 0; cursor:pointer; }
@@ -29,67 +31,26 @@
   #reset { position:absolute; right:10px; top:10px; background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:6px 10px; cursor:pointer; font:inherit; }
   ul { margin:4px 0 0 18px; padding:0; color:var(--muted); font-size:12px; }
   .note { color:var(--muted); font-size:12px; }
-  select, .btn { background:transparent; color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:6px 10px; font:inherit; cursor:pointer; }
-  select { width:100%; background:var(--panel); }
-  .btn.primary { background:var(--accent); color:#04121c; border-color:var(--accent); font-weight:600; }
-  .btn:disabled { opacity:.45; cursor:default; }
-  .btns { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
-  .file { display:block; width:100%; margin:6px 0; color:var(--muted); font-size:12px; }
-  .bar { height:8px; background:var(--line); border-radius:4px; overflow:hidden; margin:10px 0 6px; }
-  .bar > i { display:block; height:100%; width:0; background:var(--accent); transition:width .3s; }
-  .bar.done > i { background:#5ec962; }
-  .big { font-variant-numeric:tabular-nums; }
-  .warn { color:#ffb454; font-size:12px; margin-top:4px; }
-  .err { color:#ff7a7a; font-size:12px; margin-top:4px; overflow-wrap:anywhere; }
-  .job { border:1px solid var(--line); border-radius:6px; padding:8px 10px; margin:8px 0; font-size:12px; }
-  .job b { font-size:13px; overflow-wrap:anywhere; }
-  .job .last { color:var(--muted); overflow-wrap:anywhere; font-family:ui-monospace, monospace; font-size:11px; margin-top:4px; }
-  .pill { display:inline-block; border-radius:9px; padding:0 7px; font-size:11px; border:1px solid var(--line); color:var(--muted); }
-  .pill.running { color:var(--accent); border-color:var(--accent); } .pill.succeeded { color:#5ec962; border-color:#5ec962; }
-  .pill.failed { color:#ff7a7a; border-color:#ff7a7a; }
-  a { color:var(--accent); }
+  select, .btn { background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:5px 8px; font:inherit; }
+  select { width:100%; }
+  .btn { cursor:pointer; } .btn.on { background:var(--accent); color:#04121c; border-color:var(--accent); font-weight:600; }
+  .btns { display:flex; gap:6px; align-items:center; margin:6px 0; }
+  #sessTimeline { display:block; width:100%; height:18px; margin:6px 0 2px; cursor:pointer; border-radius:3px; }
+  #phone { position:absolute; right:10px; bottom:10px; width:200px; background:rgba(15,17,21,.92); border:1px solid var(--line); border-radius:8px; padding:6px; font-size:12px; display:none; }
+  #phone img { display:block; width:100%; border-radius:4px; background:#000; min-height:60px; }
+  #phone .st { margin-top:5px; color:var(--ink); } #phone .ok { color:#5ec962; } #phone .bad { color:#ff7a7a; }
   @media (max-width: 720px) { #app { flex-direction:column-reverse; } #side { width:auto; height:42%; border-right:0; border-top:1px solid var(--line); } }
 </style>
 </head>
 <body>
 <div id="app">
   <div id="side">
+    <a class="back" href="https://28palomas-rtx3090.tail3fa327.ts.net/mapper/">← Back to the dashboard</a>
     <h1 id="mapName">Placeframe map</h1>
     <div class="sub" id="stats">loading…</div>
-
     <div class="group" id="mapGroup" style="display:none">
       <h2>Map</h2>
-      <select id="mapSel" aria-label="Map to review"></select>
-    </div>
-
-    <div class="group" id="addGroup" style="display:none">
-      <h2>Add a recording</h2>
-      <div class="note">Upload another raw Insta360 <b>.insv</b> walk. When it arrives it is queued to be merged into <b id="baseName"></b>. It must revisit part of the mapped space so it can be lined up.</div>
-      <div class="warn" id="resumeHint" style="display:none"></div>
-      <input type="file" class="file" id="upFile" accept=".insv">
-      <label style="cursor:default">Connections
-        <select id="upConc" style="width:auto;flex:1">
-          <option value="auto">Auto — add more while it gets faster</option>
-          <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="6">6</option>
-        </select>
-      </label>
-      <div id="upPanel" style="display:none">
-        <div class="bar" id="upBar"><i></i></div>
-        <div class="big" id="upLine1"></div>
-        <div class="note big" id="upLine2"></div>
-        <div class="warn" id="upWarn"></div>
-      </div>
-      <div class="err" id="upErr"></div>
-      <div class="btns">
-        <button class="btn primary" id="upStart" disabled>Upload</button>
-        <button class="btn" id="upPause" style="display:none">Pause</button>
-        <button class="btn" id="upDiscard" style="display:none">Discard</button>
-      </div>
-    </div>
-
-    <div class="group" id="jobGroup" style="display:none">
-      <h2>Processing</h2>
-      <div id="jobs"></div>
+      <select id="mapSel" aria-label="Map"></select>
     </div>
 
     <div class="group">
@@ -118,11 +79,29 @@
       <label><input type="checkbox" id="showOrig"> Path in the server's stored order (what drew the white lines)</label>
       <label id="vioRow" style="display:none"><input type="checkbox" id="showVio" checked> <span><span style="color:#ff5ad1">■</span> VIO, open loop, every video frame <span style="color:#9aa1ad">(dotted = vision lost, coasting on IMU)</span></span></label>
       <label id="ovioRow" style="display:none"><input type="checkbox" id="showOvio" checked> <span><span style="color:#4cf0b0">■</span> OpenVIO (tightly coupled, open loop, every frame)</span></label>
+      <label id="ovinsRow" style="display:none"><input type="checkbox" id="showOvins" checked> <span><span style="color:#ffb347">■</span> OpenVINS (MSCKF, two fisheye cams, open loop)</span></label>
       <div class="note" id="vioNote" style="display:none"></div>
       <div style="margin-top:6px">Replay walk up to <b id="tV"></b></div>
-      <input type="range" id="tSlider" min="0" max="1" step="0.1" value="1">
-      <div class="note" id="gapsNote"></div>
+      <input type="range" id="tSlider" min="0" max="193" step="0.1" value="193">
+      <div class="note">Gaps (parts of the walk not in the map):</div>
       <ul id="gaps"></ul>
+    </div>
+
+    <div class="group" id="sessGroup" style="display:none">
+      <h2>Phone sessions</h2>
+      <select id="sessSel" aria-label="Recorded client session"></select>
+      <select id="sessSrc" aria-label="Pose source" style="margin-top:6px"></select>
+      <div class="btns">
+        <button class="btn" id="sessPlay" style="min-width:64px">▶ Play</button>
+        <select id="sessSpeed" style="width:auto"><option value="1">1×</option><option value="2">2×</option><option value="4" selected>4×</option><option value="8">8×</option></select>
+        <span class="note" id="sessT"></span>
+      </div>
+      <canvas id="sessTimeline" title="Each tick is one localization request: green = localized, red = no fix. Click to jump."></canvas>
+      <input type="range" id="sessSlider" min="0" max="1" step="0.05" value="0">
+      <label><input type="checkbox" id="sessTrail" checked> Trail of fixes so far (colour = confidence, red → green)</label>
+      <label><input type="checkbox" id="sessFails" checked> Mark failed attempts (red ×, at the last fix)</label>
+      <label><input type="checkbox" id="sessHideWalk"> Hide the mapping walk path</label>
+      <div class="note" id="sessInfo"></div>
     </div>
 
     <div class="group note">
@@ -135,29 +114,28 @@
     <button id="reset">Reset view</button>
     <div id="hud"></div>
     <div id="tip"></div>
+    <div id="phone"><img id="phoneImg" alt="What the phone camera saw"><div class="st" id="phoneSt"></div></div>
   </div>
 </div>
 <script>
 (async function () {
-  const asked = new URLSearchParams(location.search).get('map') || 'map.json';
-  const mapPath = /^(map\.json|maps\/[\w.+-]+\/map\.json)$/.test(asked) ? asked : 'map.json';
-  const data = await (await fetch(mapPath, { cache: 'no-cache' })).json();
+  const params = new URLSearchParams(location.search);
+  const maps = await fetch('maps.json').then(r => r.ok ? r.json() : []).catch(() => []);
+  const mapFile = params.get('map') || (maps[0] && maps[0].file) || 'map.json';
+  const data = await (await fetch(mapFile)).json();
+  const mapEntry = maps.find(m => m.file === mapFile) || {};
+  const mapId = mapEntry.id || data.map_id || null;
   const P = data.points, C = data.cams, CO = data.camsOrig;
   const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
   const $ = id => document.getElementById(id);
-  const V = data.vio || []; const OV = data.ovio || [];
-  // Length of the walk in seconds, from whatever the map carries (merged maps have no VIO overlays).
-  const tMax = Math.max(1, ...[C.length ? C[C.length-1][3] / 1000 : 0, V.length ? V[V.length-1][3] : 0, OV.length ? OV[OV.length-1][3] : 0]);
-  const st = { ovio: true, vio: true, view: 'top', color: 'rgb', hMin: -2, hMax: 0.9, robust: true, psize: 1.25, path: true, orig: false, t: tMax, scale: 40, ox: 0, oy: 0 };
-  $('tSlider').max = tMax; $('tSlider').value = tMax;
-  $('mapName').textContent = data.name;
+  const V = data.vio || []; const OV = data.ovio || []; const OVS = data.ovins || [];
+  const st = { ovins: true, ovio: true, vio: true, view: 'top', color: 'rgb', hMin: -2, hMax: 0.9, robust: true, psize: 1.25, path: true, orig: false, t: 1e9, scale: 40, ox: 0, oy: 0 };
 
-  document.title = 'Placeframe map viewer — ' + data.name;
+  const TMAX = Math.max(1, ...C.map(c => c[3] / 1000), ...V.map(v => v[3]));
+  st.t = TMAX; $('tSlider').max = TMAX; $('tSlider').value = TMAX;
+  document.title = 'Placeframe map viewer — ' + data.name; $('mapName').textContent = data.name;
   $('stats').textContent = `${P.length.toLocaleString()} points · ${C.length} camera frames · metric scale (IMU)`;
-  const gaps = data.gaps || [];
-  $('gaps').innerHTML = gaps.map(g => `<li>${fmt(g[0])} – ${fmt(g[1])} (${(g[1]-g[0]).toFixed(1)} s)</li>`).join('');
-  $('gapsNote').textContent = data.timeIsFrameOrder ? 'Merged map: the slider replays frames in capture order (older recording first), not clock time.'
-    : gaps.length ? 'Gaps (parts of the walk not in the map):' : '';
+  $('gaps').innerHTML = data.gaps.map(g => `<li>${fmt(g[0])} – ${fmt(g[1])} (${(g[1]-g[0]).toFixed(1)} s)</li>`).join('');
 
   function fmt(s) { const m = Math.floor(s / 60); return `${m}:${(s - m*60).toFixed(1).padStart(4,'0')}`; }
   const hs = P.map(p => p[1]).sort((a,b)=>a-b);
@@ -165,7 +143,7 @@
 
   // projection: world (x, h, z) -> 2D (u, v), u right, v up
   function proj(x, h, z) {
-    if (st.view === 'top') return [x, -z];
+    if (st.view === 'top') return [x, z];  // looking down along gravity (+y in this y-down world): screen up = +z
     if (st.view === 'sideX') return [x, h];
     return [z, h];
   }
@@ -190,7 +168,7 @@
     return stops[i].map((c, j) => Math.round(c + (stops[i+1][j] - c) * k));
   }
   function timeColor(t) {
-    const k = t / tMax; // blue -> yellow
+    const k = t / TMAX; // blue -> yellow
     return `rgb(${Math.round(40+215*k)},${Math.round(110+110*k)},${Math.round(255-200*k)})`;
   }
 
@@ -245,13 +223,18 @@
       }
       ctx.stroke(); ctx.setLineDash([]);
     }
+    if (st.ovins && OVS.length) {
+      ctx.lineWidth = 1.6 * devicePixelRatio; ctx.strokeStyle = 'rgba(255,179,71,0.95)'; ctx.beginPath();
+      for (let i = 0; i < OVS.length; i++) { const c = OVS[i]; if (c[3] > st.t) break; const [x, y] = toScreen(...proj(c[0], c[1], c[2])); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+      ctx.stroke();
+    }
     if (st.ovio && OV.length) {
       ctx.lineWidth = 1.6 * devicePixelRatio; ctx.strokeStyle = 'rgba(76,240,176,0.95)'; ctx.beginPath();
       for (let i = 0; i < OV.length; i++) { const c = OV[i]; if (c[3] > st.t) break; const [x, y] = toScreen(...proj(c[0], c[1], c[2])); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
       ctx.stroke();
     }
     // time-ordered path, broken at gaps
-    if (st.path) {
+    if (st.path && !(sess.doc && sess.hideWalk)) {
       ctx.lineWidth = 2.2 * devicePixelRatio; ctx.lineCap = 'round';
       for (let i = 1; i < C.length; i++) {
         const a = C[i-1], b = C[i];
@@ -266,12 +249,140 @@
       const last = [...C].reverse().find(c => c[3] / 1000 <= st.t);
       if (last) { const s1 = toScreen(...proj(last[0], last[1], last[2])); ctx.fillStyle = '#fde725'; ctx.beginPath(); ctx.arc(s1[0], s1[1], 5 * devicePixelRatio, 0, 7); ctx.fill(); }
     }
-    $('hud').textContent = `${shown.toLocaleString()} points shown · ${st.view === 'top' ? 'top-down (north = map −Z)' : st.view === 'sideX' ? 'side view along Z' : 'side view along X'} · 1 grid square = 1 m`;
+    drawSession();
+    $('hud').textContent = `${shown.toLocaleString()} points shown · ${st.view === 'top' ? 'top-down (looking down; map +Z up)' : st.view === 'sideX' ? 'side view along Z' : 'side view along X'} · 1 grid square = 1 m`;
   }
 
   function resize() {
     const r = cv.getBoundingClientRect();
     cv.width = Math.round(r.width * devicePixelRatio); cv.height = Math.round(r.height * devicePixelRatio);
+  }
+
+  // ------------------------------------------------------------ recorded phone sessions
+  const sess = { doc: null, frames: [], t: 0, playing: false, speed: 4, trail: true, fails: true, hideWalk: false, last: -1 };
+  function confColor(c) { const k = Math.max(0, Math.min(1, c)); return `rgb(${Math.round(255 - 160 * k)},${Math.round(80 + 150 * k)},90)`; }
+  function sessIndex() { let i = -1; for (let k = 0; k < sess.frames.length; k++) { if (sess.frames[k].t <= sess.t) i = k; else break; } return i; }
+  function drawSession() {
+    if (!sess.doc) return;
+    const F = sess.frames, iNow = sessIndex(), dpr = devicePixelRatio;
+    let lastFix = null;
+    for (let i = 0; i <= iNow; i++) {
+      const f = F[i];
+      if (f.p) {
+        const [x, y] = toScreen(...proj(f.p[0], f.p[1], f.p[2]));
+        if (sess.trail) {
+          if (lastFix && f.t - lastFix.t < 3) {
+            const [x0, y0] = toScreen(...proj(lastFix.p[0], lastFix.p[1], lastFix.p[2]));
+            ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1.5 * dpr; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x, y); ctx.stroke();
+          }
+          ctx.fillStyle = confColor(f.conf); ctx.beginPath(); ctx.arc(x, y, 3.2 * dpr, 0, 7); ctx.fill();
+        }
+        lastFix = f;
+      } else if (sess.fails && lastFix) {
+        const [x, y] = toScreen(...proj(lastFix.p[0], lastFix.p[1], lastFix.p[2])), d = 3.5 * dpr;
+        ctx.strokeStyle = 'rgba(255,90,90,0.9)'; ctx.lineWidth = 1.4 * dpr; ctx.beginPath();
+        ctx.moveTo(x - d, y - d); ctx.lineTo(x + d, y + d); ctx.moveTo(x + d, y - d); ctx.lineTo(x - d, y + d); ctx.stroke();
+      }
+    }
+    // current pose: the phone as an arrow along its viewing direction
+    if (lastFix) {
+      const cur = F[iNow], fresh = cur === lastFix;
+      const [x, y] = toScreen(...proj(lastFix.p[0], lastFix.p[1], lastFix.p[2]));
+      let [du, dv] = proj(lastFix.f[0], lastFix.f[1], lastFix.f[2]); const n = Math.hypot(du, dv) || 1; du /= n; dv /= n;
+      const L = 22 * dpr, a = Math.atan2(-dv, du);
+      ctx.save(); ctx.translate(x, y); ctx.rotate(a);
+      ctx.fillStyle = fresh ? 'rgba(76,194,255,0.30)' : 'rgba(255,90,90,0.22)';
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, L * 2.2, -0.5, 0.5); ctx.closePath(); ctx.fill();  // field of view wedge
+      ctx.fillStyle = fresh ? '#4cc2ff' : '#ff7a7a'; ctx.strokeStyle = '#04121c'; ctx.lineWidth = 1.5 * dpr;
+      ctx.beginPath(); ctx.moveTo(L * 0.6, 0); ctx.lineTo(-L * 0.35, L * 0.32); ctx.lineTo(-L * 0.15, 0); ctx.lineTo(-L * 0.35, -L * 0.32); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.restore();
+    }
+  }
+  function sessPanel() {
+    if (!sess.doc) { $('phone').style.display = 'none'; return; }
+    const i = sessIndex(); $('sessT').textContent = `${fmt(sess.t)} / ${fmt(sess.doc.duration_s)}`;
+    $('sessSlider').value = sess.t;
+    drawTimeline();
+    if (i < 0) { $('phone').style.display = 'none'; return; }
+    const f = sess.frames[i]; $('phone').style.display = 'block';
+    if (sess.last !== i) { $('phoneImg').src = f.img; sess.last = i; }
+    $('phoneSt').innerHTML = `#${i + 1} · ${fmt(f.t)} · ` + (f.p
+      ? `<span class="ok">localized</span> · conf ${f.conf.toFixed(2)}${f.inl != null ? ' · ' + f.inl + ' inliers' : ''} · ${Math.round(f.ms)} ms<br>height ${f.p[1].toFixed(2)} m`
+      : `<span class="bad">no fix</span> (${f.status}) · ${Math.round(f.ms)} ms`);
+  }
+  function drawTimeline() {
+    const c = $('sessTimeline'), r = c.getBoundingClientRect(), dpr = devicePixelRatio;
+    c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr);
+    const g = c.getContext('2d'), D = Math.max(1, sess.doc.duration_s);
+    g.fillStyle = '#0f1115'; g.fillRect(0, 0, c.width, c.height);
+    for (const f of sess.frames) { g.fillStyle = f.p ? '#5ec962' : '#ff5a5a'; g.fillRect(Math.round(f.t / D * (c.width - 2)), 2 * dpr, Math.max(1, dpr * 1.5), c.height - 4 * dpr); }
+    g.fillStyle = '#fff'; g.fillRect(Math.round(sess.t / D * (c.width - 2)), 0, 2 * dpr, c.height);
+  }
+  function sessSources(doc) {
+    const out = [];
+    if (mapId && doc.map_ids.includes(mapId)) out.push(['rec', 'As the phone saw it (recorded on this map)']);
+    if (mapId && doc.replays[mapId]) out.push(['replay', 'Re-localized on this map (replay)']);
+    if (!out.length) out.push(['rec', 'Recorded on another map — positions may not line up']);
+    return out;
+  }
+  function useSource(src) {
+    const d = sess.doc;
+    sess.frames = src === 'replay' ? d.frames.map((f, i) => ({ t: f.t, img: f.img, ...d.replays[mapId][i] })) : d.frames;
+    const ok = sess.frames.filter(f => f.p).length;
+    $('sessInfo').textContent = `${d.requests} requests over ${fmt(d.duration_s)} · ${ok} localized (${Math.round(100 * ok / d.requests)}%) · ${d.camera.width}×${d.camera.height} · ${(d.user_agent || '').replace(/%2F/g, '/')}`;
+    sess.last = -1; sessPanel(); draw();
+  }
+  async function loadSession(id) {
+    stopPlay();
+    if (!id) { sess.doc = null; sessPanel(); draw(); return; }
+    sess.doc = await (await fetch(`sessions/${id}.json`, { cache: 'no-cache' })).json();
+    const srcs = sessSources(sess.doc);
+    $('sessSrc').innerHTML = srcs.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+    $('sessSlider').max = sess.doc.duration_s; sess.t = 0;
+    const u = new URL(location); u.searchParams.set('session', id); history.replaceState(null, '', u);
+    useSource(srcs[0][0]);
+  }
+  function stopPlay() { sess.playing = false; $('sessPlay').textContent = '▶ Play'; }
+  let tPrev = 0;
+  function tick(now) {
+    if (!sess.playing) return;
+    const dt = Math.min(0.25, (now - (tPrev || now)) / 1000); tPrev = now;
+    sess.t = Math.min(sess.doc.duration_s, sess.t + dt * sess.speed);
+    sessPanel(); draw();
+    if (sess.t >= sess.doc.duration_s) { stopPlay(); return; }
+    requestAnimationFrame(tick);
+  }
+  $('sessPlay').onclick = () => {
+    if (!sess.doc) return;
+    if (sess.playing) { stopPlay(); return; }
+    if (sess.t >= sess.doc.duration_s) sess.t = 0;
+    sess.playing = true; tPrev = 0; $('sessPlay').textContent = '❚❚ Pause'; requestAnimationFrame(tick);
+  };
+  $('sessSpeed').onchange = e => { sess.speed = +e.target.value; };
+  $('sessSlider').oninput = e => { sess.t = +e.target.value; sessPanel(); draw(); };
+  $('sessTimeline').onclick = e => { const r = e.target.getBoundingClientRect(); sess.t = (e.clientX - r.left) / r.width * sess.doc.duration_s; sessPanel(); draw(); };
+  $('sessSel').onchange = e => loadSession(e.target.value);
+  $('sessSrc').onchange = e => useSource(e.target.value);
+  $('sessTrail').onchange = e => { sess.trail = e.target.checked; draw(); };
+  $('sessFails').onchange = e => { sess.fails = e.target.checked; draw(); };
+  $('sessHideWalk').onchange = e => { sess.hideWalk = e.target.checked; draw(); };
+  window.addEventListener('keydown', e => { if (e.code === 'Space' && sess.doc && e.target.tagName !== 'SELECT') { e.preventDefault(); $('sessPlay').click(); } });
+
+  if (maps.length > 1) {
+    $('mapGroup').style.display = '';
+    $('mapSel').innerHTML = maps.map(m => `<option value="${m.file}" ${m.file === mapFile ? 'selected' : ''}>${m.name}</option>`).join('');
+    $('mapSel').onchange = e => { const u = new URL(location); u.searchParams.set('map', e.target.value); location.href = u; };
+  }
+  const sessions = await fetch('sessions/index.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : []).catch(() => []);
+  if (sessions.length) {
+    $('sessGroup').style.display = '';
+    const label = s => {
+      const d = new Date(s.start), here = mapId && s.map_ids.includes(mapId), rep = mapId && s.replayed_on.includes(mapId);
+      return `${d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · ${s.requests} req · ${Math.round(100 * s.localized / s.requests)}% ok${here ? '' : rep ? ' · replayed here' : ' · other map'}`;
+    };
+    $('sessSel').innerHTML = '<option value="">— choose a recorded session —</option>' + sessions.map(s => `<option value="${s.id}">${label(s)}</option>`).join('');
+    const want = params.get('session');
+    if (want && sessions.some(s => s.id === want)) { $('sessSel').value = want; await loadSession(want); if (params.get('t')) { sess.t = +params.get('t'); sessPanel(); draw(); } }
   }
 
   // controls
@@ -296,6 +407,8 @@
   $('psize').oninput = e => { st.psize = +e.target.value; draw(); };
   $('showPath').onchange = e => { st.path = e.target.checked; draw(); };
   $('showOrig').onchange = e => { st.orig = e.target.checked; draw(); };
+  $('showOvins').onchange = e => { st.ovins = e.target.checked; draw(); };
+  if (OVS.length) $('ovinsRow').style.display = '';
   $('showOvio').onchange = e => { st.ovio = e.target.checked; draw(); };
   if (OV.length) $('ovioRow').style.display = '';
   $('showVio').onchange = e => { st.vio = e.target.checked; draw(); };
