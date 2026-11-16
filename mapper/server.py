@@ -306,14 +306,20 @@ def _new_map_name(filename: str, folder: str = "") -> str:
 
 
 def _default_name(map_id: str, filename: str) -> str:
-    """Name for a merged map when the user gives none: '<original map> + N recordings (dates)'."""
-    chain = _chain(map_id, _lineage())
-    dates = [r["recorded"][:10] if r["recorded"] else r["filename"] for r in chain["recordings"]]
+    """Name for a merged map when the user gives none: '<original map> + N recordings (dates)'. When the original map
+    was itself built from a recording here (a new map), that recording is part of the original, not an addition."""
+    produced = _lineage()
+    chain = _chain(map_id, produced)
+    recs = chain["recordings"]
+    base_job = produced.get(chain["base_map_id"])
+    if recs and base_job and not base_job.get("map_id"):  # chain starts with a new-map build
+        base_name, recs = (base_job.get("result") or {}).get("name"), recs[1:]
+    else:
+        base_name = _base_names.get(chain["base_map_id"])
     new = _recording({"id": "", "filename": filename, "map_id": map_id, "state": ""})["recorded"]
-    dates.append(new[:10] if new else filename)
-    base = _base_names.get(chain["base_map_id"]) or chain["base_map_id"][:8]
-    n = len(dates)
-    return f"{base} + {n} recording{'s' if n > 1 else ''} ({', '.join(dates)})"
+    dates = sorted({r["recorded"][:10] if r["recorded"] else r["filename"] for r in recs} | {new[:10] if new else filename})
+    n = len(recs) + 1
+    return f"{base_name or chain['base_map_id'][:8]} + {n} recording{'s' if n > 1 else ''} ({', '.join(dates)})"
 
 
 _base_names: dict[str, str] = {}  # map id -> name, refreshed by /api/maps
