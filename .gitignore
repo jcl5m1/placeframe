@@ -1,0 +1,10 @@
+placeframe-patches/
+gpu/dist/
+gpu/.cudss.whl
+.venv/
+__pycache__/
+.ruff_cache/
+data/
+*.whl
+*.insv
+*.lrv

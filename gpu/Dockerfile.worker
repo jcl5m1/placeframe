@@ -1,0 +1,18 @@
+# Fleet worker: the Placeframe reconstructor image + CUDA-enabled pycolmap (GPU bundle adjustment) + the local
+# reconstructor patches baked in, so rented instances need no mounts. Build from the placeframe-insta360 root:
+#
+#   docker build -f gpu/Dockerfile.worker -t placeframe-worker:local .
+#
+# Base pinned by digest (reconstructor-cuda:tree-f6a81b4d…). Big layers come first (base), code last, so a code
+# change only re-ships a few MB to hosts that already have the base layers cached.
+FROM ghcr.io/outernet-foundation/placeframe/reconstructor-cuda@sha256:19d0234fbfc1bde9c367aed63c2d80171510f144b4482006f4beaf93ee94137d
+
+COPY gpu/dist/pycolmap-*.whl /tmp/wheels/
+RUN uv pip install --python /opt/uv/venv/bin/python --no-deps --reinstall /tmp/wheels/pycolmap-*.whl \
+        nvidia-cudss-cu12==1.0.0.35 \
+    && rm -rf /tmp/wheels
+# (no import check here: image builds have no GPU driver; verify with `docker run --gpus all ... import pycolmap`)
+
+COPY placeframe-patches/ /opt/uv/venv/lib/python3.13/site-packages/reconstructor/
+COPY fleet/worker_entry.py /usr/local/bin/worker_entry.py
+ENTRYPOINT ["/opt/uv/venv/bin/python", "/usr/local/bin/worker_entry.py"]

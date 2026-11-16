@@ -1,0 +1,17 @@
+[project]
+name = "placeframe-insta360"
+version = "0.1.0"
+description = "Convert Insta360 equirectangular captures into Placeframe capture sessions"
+requires-python = ">=3.11"
+dependencies = [
+    "pycolmap-cuda12==3.13.0",
+    "opencv-python-headless>=4.10",
+    "numpy>=1.26",
+    "scipy>=1.13",
+    "httpx>=0.27",
+    "telemetry-parser>=0.4.0",
+    "fastapi>=0.163.0",
+    "uvicorn>=0.54.0",
+    "rosbags>=0.11.9",
+    "matplotlib>=3.11.2",
+]
