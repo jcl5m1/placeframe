@@ -1,4 +1,6 @@
 import asyncio
+import os
+import sys
 from asyncio import CancelledError, run, sleep
 from pathlib import Path
 from signal import SIGTERM, signal
@@ -22,11 +24,15 @@ from .settings import get_settings
 POLL_INTERVAL_SECONDS = 5.0
 HEARTBEAT_CHECK_SECONDS = 30.0
 TOKEN_REFRESH_INTERVAL_SECONDS = 30.0
+# After each job the worker replaces itself with a fresh process (models reload in seconds). A long-lived worker kept
+# several GB from every reconstruction (8 GB after a 7,242-image build), so a later large build started short of
+# memory, swapped for an hour and was killed. Set RECONSTRUCTOR_RECYCLE_AFTER_JOB=0 to keep one process.
+RECYCLE_AFTER_JOB = os.environ.get("RECONSTRUCTOR_RECYCLE_AFTER_JOB", "1") == "1"
 
 settings = get_settings()
 
 
-async def worker_loop() -> None:
+async def worker_loop() -> bool:
     print("Reconstructor Worker Started")
 
     auth = TokenManager(str(settings.auth_token_url), settings.auth_client_id, Path(settings.private_key_path))
@@ -91,6 +97,10 @@ async def worker_loop() -> None:
                 finally:
                     heartbeat.cancel()
 
+                if RECYCLE_AFTER_JOB:
+                    token_refresher.cancel()
+                    return True
+
             except CancelledError:
                 print("Worker loop cancelled. Shutting down...")
                 token_refresher.cancel()
@@ -98,6 +108,7 @@ async def worker_loop() -> None:
             except Exception as e:
                 print(f"[Critical Worker Error] {e}")
                 await sleep(POLL_INTERVAL_SECONDS)
+    return False
 
 
 async def _keep_token_fresh(auth: TokenManager, configuration: Configuration, api_client: ApiClient) -> None:
@@ -129,9 +140,13 @@ def main() -> None:
 
     try:
         # This is the single place where the event loop is started
-        run(worker_loop())
+        recycle = run(worker_loop())
     except (KeyboardInterrupt, CancelledError):
         # Silence the stack trace on exit
-        pass
+        recycle = False
+
+    if recycle:
+        print("Job finished; restarting the worker process to release its memory.", flush=True)
+        os.execv(sys.executable, [sys.executable, *sys.argv])
 
     print("Worker stopped.")
