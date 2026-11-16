@@ -1,3 +1,8 @@
+import json
+import os
+import time
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Annotated, cast
 from uuid import UUID
 
@@ -12,7 +17,7 @@ from core.camera_config import PinholeCameraConfig
 from core.localization_metrics import LocalizationMetrics
 from core.transform import Float3, Float4, Transform
 from datamodels.public_tables import Reconstruction
-from litestar import Router, get, post
+from litestar import Request, Router, get, post
 from litestar.datastructures import UploadFile
 from litestar.di import Provide
 from litestar.enums import RequestEncodingType
@@ -35,6 +40,9 @@ from ..settings import get_settings
 from .localization_maps import fetch_localization_maps
 
 settings = get_settings()
+# Local addition: when set, every /localize request (image + parameters + response + latency) is written here
+# so real client sessions can be replayed for localization metrics, regression tests and load simulation.
+RECORD_DIR = os.environ.get("LOCALIZATION_RECORD_DIR")
 
 
 class LocalizationRequest(MultipartRequestModel):
@@ -55,8 +63,23 @@ class MapLocalization(BaseModel):
 
 @post("/", operation_class=MultipartRequestOperation)
 async def localize_image(
-    session: AsyncSession, data: Annotated[LocalizationRequest, Body(media_type=RequestEncodingType.MULTI_PART)]
+    request: Request,
+    session: AsyncSession,
+    data: Annotated[LocalizationRequest, Body(media_type=RequestEncodingType.MULTI_PART)],
 ) -> list[MapLocalization]:
+    started = time.monotonic()
+    received_at = datetime.now(UTC)
+    image = await data.image.read()
+    try:
+        result = await _localize(session, data, image)
+    except HTTPException as e:
+        _record(request, data, image, received_at, started, None, e.status_code)
+        raise
+    _record(request, data, image, received_at, started, result, 201)
+    return result
+
+
+async def _localize(session: AsyncSession, data: LocalizationRequest, image: bytes) -> list[MapLocalization]:
     reconstruction_id_to_map_id = {
         map.reconstruction_id: map for map in await fetch_localization_maps(session, data.map_ids)
     }
@@ -67,7 +90,6 @@ async def localize_image(
             )
         )
     ).all()
-    image = await data.image.read()
 
     async with ApiClient(Configuration(host=str(settings.localizer_container_url))) as api_client:
         try:
@@ -111,6 +133,46 @@ async def localize_image(
             if status == 422:
                 raise HTTPException(status_code=HTTP_422_UNPROCESSABLE_ENTITY) from e
             raise HTTPException(status_code=HTTP_502_BAD_GATEWAY, detail="Localization session backend error") from e
+
+
+def _record(
+    request: Request,
+    data: LocalizationRequest,
+    image: bytes,
+    received_at: datetime,
+    started: float,
+    result: list[MapLocalization] | None,
+    status: int,
+) -> None:
+    if not RECORD_DIR or request.headers.get("x-placeframe-replay"):
+        return
+    day = Path(RECORD_DIR) / received_at.strftime("%Y-%m-%d")
+    stem = received_at.strftime("%H%M%S_%f")
+    entry = {
+        "received_at": received_at.isoformat(),
+        "latency_ms": round((time.monotonic() - started) * 1000, 1),
+        "status": status,
+        "client": request.headers.get("x-forwarded-for") or (request.client.host if request.client else None),
+        "user_agent": request.headers.get("user-agent"),
+        "image": f"{stem}.jpg",
+        "image_bytes": len(image),
+        "image_content_type": data.image.content_type,
+        "request": {
+            "map_ids": [str(m) for m in data.map_ids],
+            "camera_config": data.camera_config.model_dump(mode="json"),
+            "axis_convention": data.axis_convention.value,
+            "retrieval_top_k": data.retrieval_top_k,
+            "ransac_threshold": data.ransac_threshold,
+        },
+        "response": [r.model_dump(mode="json") for r in result] if result is not None else None,
+    }
+    try:
+        day.mkdir(parents=True, exist_ok=True)
+        (day / f"{stem}.jpg").write_bytes(image)
+        with (day / "requests.jsonl").open("a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception as e:
+        print(f"[localization-recorder] failed to record request: {e!r}")
 
 
 @get("/version")
