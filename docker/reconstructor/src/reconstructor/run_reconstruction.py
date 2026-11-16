@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tarfile
 from collections.abc import Callable
 from io import BytesIO
@@ -9,6 +10,7 @@ from typing import Any
 from uuid import UUID
 
 from common.boto_clients import create_s3_client
+from core.axis_convention import AxisConvention
 from core.camera_config import PinholeCameraConfig
 from core.capture_session_manifest import CaptureSessionManifest
 from core.image_preprocess import canonicalize_image, tile_image
@@ -45,6 +47,7 @@ DEVICE = "cuda" if cuda.is_available() else "cpu"
 
 WORK_DIR = Path("/tmp/reconstruction")
 CAPTURE_SESSION_DIRECTORY = WORK_DIR / "capture_session"
+LOCATION_FILE = "location.json"
 
 global_descriptor_extractor: Callable[[Tensor], TT[RetrievalDim]]
 local_feature_extractor: Callable[[Tensor], LocalFeatureOutput]
@@ -102,6 +105,10 @@ def run_reconstruction(
 
     with open(CAPTURE_SESSION_DIRECTORY / "manifest.json", "rb") as file:
         capture_session_manifest = CaptureSessionManifest.model_validate_json(file.read().decode("utf-8"))
+
+    _store_capture_location(
+        s3_client, settings.reconstructions_bucket, reconstruction_id, capture_session_manifest.axis_convention
+    )
 
     held_out = (
         set(reconstruction_options.held_out_frame_timestamps)
@@ -279,6 +286,22 @@ def run_reconstruction(
             )
 
     return metrics.metrics
+
+
+def _store_capture_location(
+    s3_client: Any, bucket: str, reconstruction_id: UUID, axis_convention: AxisConvention
+) -> None:
+    # A capture may carry the device's location (location.json: latitude, longitude, altitude). It is kept with the
+    # reconstruction so the API can place a map built from it on the globe. The map's frame is OpenCV-based; Unity
+    # captures are y-up, which becomes -y there, so that hint is added when the capture did not give one.
+    location_path = CAPTURE_SESSION_DIRECTORY / LOCATION_FILE
+    if not location_path.exists():
+        return
+    location = json.loads(location_path.read_text())
+    if axis_convention == AxisConvention.UNITY:
+        location.setdefault("map_up_axis", "-y")
+    body = json.dumps(location).encode()
+    _put_artifact(s3_client, bucket, reconstruction_id, LOCATION_FILE, body)
 
 
 def _put_artifact(s3_client: Any, bucket: str, reconstruction_id: UUID, key: str, body: bytes) -> None:

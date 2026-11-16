@@ -1,3 +1,4 @@
+import json
 from io import BytesIO
 from typing import Annotated
 from uuid import UUID
@@ -26,6 +27,7 @@ from sqlalchemy import exists, func, insert, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_session
+from ..geo_placement import placement_from_location
 from ..settings import get_settings
 from .reconstructions import fetch_reconstruction_status
 
@@ -37,17 +39,22 @@ s3_client = create_s3_client(
     minio_secret_key=settings.minio_secret_key,
 )
 
+_UNPLACED = {
+    "position_x": 0.0,
+    "position_y": 0.0,
+    "position_z": 0.0,
+    "rotation_x": 0.0,
+    "rotation_y": 0.0,
+    "rotation_z": 0.0,
+    "rotation_w": 1.0,
+}
+LOCATION_ARTIFACT = "location.json"
 _TRANSFORM_FIELDS = {"position_x", "position_y", "position_z", "rotation_x", "rotation_y", "rotation_z", "rotation_w"}
 
 
 async def _sync_camera_positions(session: AsyncSession, row: LocalizationMap) -> None:
     """Compute world-space camera positions from the reconstruction's frame poses and store them in the DB."""
-    frame_poses_bytes = s3_client.get_object(
-        Bucket=settings.reconstructions_bucket, Key=f"{row.reconstruction_id}/sfm_model/frame_poses.npz"
-    )["Body"].read()
-
-    with load(BytesIO(frame_poses_bytes)) as npz:
-        frame_positions = npz["positions"]  # (N, 3)
+    frame_positions = _frame_positions(row.reconstruction_id)  # (N, 3)
 
     rotation_matrix = Rotation.from_quat([row.rotation_x, row.rotation_y, row.rotation_z, row.rotation_w]).as_matrix()
     translation = [row.position_x, row.position_y, row.position_z]
@@ -85,6 +92,8 @@ async def create_localization_map(session: AsyncSession, data: LocalizationMapCr
         )
 
     row = localization_map_from_dto(data)
+    if all(getattr(row, field) == value for field, value in _UNPLACED.items()):
+        _place_from_capture_location(row)
 
     session.add(row)
 
@@ -260,3 +269,31 @@ router = Router(
         update_localization_maps,
     ],
 )
+
+
+def _place_from_capture_location(row: LocalizationMap) -> None:
+    # A map created without a placement takes it from the location its capture was recorded at, when the capture
+    # carried one; see geo_placement for the format and what is (and is not) recovered from it.
+    try:
+        location = json.loads(
+            s3_client.get_object(
+                Bucket=settings.reconstructions_bucket, Key=f"{row.reconstruction_id}/{LOCATION_ARTIFACT}"
+            )["Body"].read()
+        )
+    except s3_client.exceptions.NoSuchKey:
+        return
+    placement = placement_from_location(location, _frame_positions(row.reconstruction_id))
+    if placement is None:
+        return
+    (
+        (row.position_x, row.position_y, row.position_z),
+        (row.rotation_x, row.rotation_y, row.rotation_z, row.rotation_w),
+    ) = placement
+
+
+def _frame_positions(reconstruction_id: UUID):
+    frame_poses_bytes = s3_client.get_object(
+        Bucket=settings.reconstructions_bucket, Key=f"{reconstruction_id}/sfm_model/frame_poses.npz"
+    )["Body"].read()
+    with load(BytesIO(frame_poses_bytes)) as npz:
+        return npz["positions"].astype("float64")
