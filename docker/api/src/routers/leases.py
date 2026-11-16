@@ -40,19 +40,11 @@ async def request_lease(session: AsyncSession) -> LeaseResponse:
     # Reap stale leases — a worker crash skips complete_lease and would otherwise stall the queue.
     # A lease is "stale" when it has been off the queued list for longer than LEASE_TIMEOUT
     # without any updated_at refresh (every progress write touches updated_at via the trigger).
-    await session.execute(
-        update(Reconstruction)
-        .where(
-            ~Reconstruction.status.in_((
-                ReconstructionStatus.SUCCEEDED,
-                ReconstructionStatus.FAILED,
-                ReconstructionStatus.CANCELLED,
-                ReconstructionStatus.QUEUED,
-            )),
-            Reconstruction.updated_at < func.now() - LEASE_TIMEOUT,
-        )
-        .values(status=ReconstructionStatus.FAILED, error="Lease timed out")
-    )
+    # The reap runs in its own transaction on the same engine: when no job is queued this request ends in
+    # NotFoundException, which rolls the request's session back and would undo the reap, leaving a dead worker's
+    # job "in progress" indefinitely.
+    async with AsyncSession(session.bind) as reaper, reaper.begin():
+        await _reap_stale_leases(reaper)
 
     # Find the oldest queued reconstruction and lock the row
     result = await session.execute(
@@ -79,6 +71,22 @@ async def request_lease(session: AsyncSession) -> LeaseResponse:
         reconstruction_id=row.id,
         capture_session_id=row.capture_session_id,
         options=manifest.options,
+    )
+
+
+async def _reap_stale_leases(session: AsyncSession) -> None:
+    await session.execute(
+        update(Reconstruction)
+        .where(
+            ~Reconstruction.status.in_((
+                ReconstructionStatus.SUCCEEDED,
+                ReconstructionStatus.FAILED,
+                ReconstructionStatus.CANCELLED,
+                ReconstructionStatus.QUEUED,
+            )),
+            Reconstruction.updated_at < func.now() - LEASE_TIMEOUT,
+        )
+        .values(status=ReconstructionStatus.FAILED, error="Lease timed out")
     )
 
 
