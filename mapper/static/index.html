@@ -271,7 +271,11 @@ $('drop').addEventListener('drop', e => [...e.dataTransfer.files].forEach(startU
 function startUpload(file) {
   if (!file.name.toLowerCase().endsWith('.insv')) { alert(file.name + ': please upload the raw .insv recording'); return; }
   const key = file.name + '|' + file.size + '|' + file.lastModified;
-  if (uploads.has(key) && uploads.get(key).running) return;
+  if (uploads.has(key) && (uploads.get(key).running || uploads.get(key).done)) return;
+  if (!file._server) { refreshServerStatus([file]).then(() => file._server && startUpload(file)); return; }
+  const prior = file._server.status;
+  if (prior === 'uploading') { alert(file.name + ' is already being uploaded (from this or another browser).'); return; }
+  if (prior === 'uploaded' && !confirm(file.name + ' was already uploaded. Upload it again as a new job?')) return;
   const st = { key, file, offset: 0, paused: false, running: false, el: null, id: null, t0: 0, b0: 0, retries: 0 };
   uploads.set(key, st); render(st); run(st);
   inspect(file).then(() => render(st));
@@ -320,23 +324,61 @@ function gpsText(file) {
   return '<span class="meta">no GPS</span>';
 }
 $('sdBtn').onclick = () => $('sdDir').click();
-$('sdDir').onchange = e => {
+$('sdDir').onchange = async e => {
   const files = [...e.target.files].filter(f => f.name.toLowerCase().endsWith('.insv') && !f.name.startsWith('.'))
     .sort((a, b) => b.name.localeCompare(a.name));
   e.target.value = '';
   const list = $('sdList');
   if (!files.length) { list.innerHTML = '<span class="meta">No .insv recordings in that folder.</span>'; return; }
+  list.innerHTML = `<span class="meta">Checking ${files.length} recording(s) against what was already uploaded…</span>`;
+  await refreshServerStatus(files);
   const draw = () => {
-    const withGps = files.filter(f => f._gps && f._gps.gps_fixes).length, checked = files.filter(f => f._gps).length;
-    list.innerHTML = `<div class="meta" style="margin-bottom:6px">${files.length} recording(s) · ${checked} checked · ${withGps} with GPS</div>`
-      + files.map((f, i) => `<div class="sdrow"><span>${gpsLight(f)}<span class="name">${esc(f.name)}</span>
-          <span class="meta"> · ${mb(f.size)} · ${new Date(f.lastModified).toLocaleString()}</span><br>${gpsText(f)}</span>
-          <button class="ghost" data-i="${i}">Upload</button></div>`).join('');
-    list.querySelectorAll('button[data-i]').forEach(b => b.onclick = () => startUpload(files[+b.dataset.i]));
+    const todo = files.filter(needsUpload);
+    const withGps = files.filter(f => f._gps && f._gps.gps_fixes).length;
+    const counts = {};
+    files.forEach(f => { const k = uploadState(f).label; counts[k] = (counts[k] || 0) + 1; });
+    list.innerHTML = `<div class="top" style="margin-bottom:6px"><span class="meta">${files.length} recording(s): `
+      + Object.entries(counts).map(([k, n]) => `${n} ${k}`).join(' · ') + ` · ${withGps} with GPS</span>
+      <button id="uploadNew"${todo.length ? '' : ' disabled'}>Upload ${todo.length} new</button></div>`
+      + files.map((f, i) => {
+        const st = uploadState(f);
+        return `<div class="sdrow"><span>${gpsLight(f)}<span class="name">${esc(f.name)}</span>
+          <span class="meta"> · ${mb(f.size)} · ${new Date(f.lastModified).toLocaleString()}</span><br>
+          <span class="${st.cls}">${esc(st.text)}</span> · ${gpsText(f)}</span>
+          ${needsUpload(f) ? `<button class="ghost" data-i="${i}">${st.label === 'paused' ? 'Resume' : 'Upload'}</button>` : ''}</div>`;
+      }).join('');
+    list.querySelectorAll('button[data-i]').forEach(b => b.onclick = () => { startUpload(files[+b.dataset.i]); draw(); });
+    $('uploadNew').onclick = () => { files.filter(needsUpload).forEach(f => startUpload(f)); draw(); };
   };
   draw();
-  files.forEach(f => inspect(f).then(draw));
+  // GPS is only checked for recordings that still need uploading (each check sends ~20-40 MB).
+  files.filter(needsUpload).forEach(f => inspect(f).then(draw));
 };
+
+// What the server (and this page) already has of a recording: skip what is uploaded or being uploaded.
+async function refreshServerStatus(files) {
+  const r = await api('uploads/check', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files: files.map(f => ({ name: f.name, size: f.size })) }) });
+  if (!r.ok) { files.forEach(f => { f._server ??= { status: 'new' }; }); return; }  // unknown: treat as new
+  const byKey = new Map((await r.json()).map(x => [x.name + '|' + x.size, x]));
+  files.forEach(f => { f._server = byKey.get(f.name + '|' + f.size) || { status: 'new' }; });
+}
+function queuedHere(f) {
+  const st = uploads.get(fileKey(f));
+  return st && (st.running || st.done);
+}
+function uploadState(f) {
+  const s = f._server || { status: 'new' };
+  if (queuedHere(f)) return { label: 'queued here', text: 'in this page’s upload list', cls: 'warn' };
+  if (s.status === 'uploaded') {
+    const what = s.job_state === 'succeeded' ? `done${s.map_name ? ' → ' + s.map_name : ''}` : (s.job_state || 'received');
+    return { label: 'uploaded', text: `already uploaded · ${what}`, cls: 'ok' };
+  }
+  if (s.status === 'uploading') return { label: 'uploading', text: `being uploaded now (${mb(s.offset)} received)`, cls: 'warn' };
+  if (s.status === 'paused') return { label: 'paused', text: `partly uploaded (${mb(s.offset)}), will resume`, cls: 'meta' };
+  return { label: 'new', text: 'not uploaded yet', cls: 'meta' };
+}
+const needsUpload = f => !queuedHere(f) && ['new', 'paused'].includes((f._server || { status: 'new' }).status);
 async function run(st) {
   st.running = true; st.paused = false; render(st);
   try {

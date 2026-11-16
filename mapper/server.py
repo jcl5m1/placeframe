@@ -43,6 +43,7 @@ HOLD = DATA / "HOLD"
 # (seen by every client) stay unchanged. Map id -> folder path; maps not listed are at the top level.
 FOLDERS = DATA / "map_folders.json"
 CHUNK_MAX = 64 * 1024 * 1024
+UPLOAD_ACTIVE_SECONDS = 120  # a partial upload that received data this recently is still in progress
 ALLOWED_EXT = {".insv"}
 
 sys.path.insert(0, str(REPO))
@@ -313,6 +314,41 @@ async def create_upload(body: dict, who: str = Depends(user)):
                 "complete": False}
         _save(meta)
     return {"id": uid, "offset": 0, "size": size, "resumed": False}
+
+
+@app.post("/api/uploads/check")
+async def check_uploads(body: dict, who: str = Depends(user)):
+    """Which of these recordings (name + size, as on the camera's card) this service already has: 'uploaded' (complete,
+    with its processing job), 'uploading' (partial and receiving data now), 'paused' (partial, resumable) or 'new'.
+    Matched on file name and size, which stay the same however the card is read."""
+    known: dict[tuple[str, int], dict] = {}
+    for mp in UPLOADS.glob("*.json"):
+        try:
+            m = json.loads(mp.read_text())
+        except ValueError:
+            continue
+        key = (m["filename"], int(m["size"]))
+        if m.get("complete") or key not in known:  # a complete upload wins over stale partial ones
+            known[key] = m
+    out = []
+    for f in body.get("files") or []:
+        name, size = Path(str(f.get("name", ""))).name, int(f.get("size") or 0)
+        m = known.get((name, size))
+        if not m:
+            out.append({"name": name, "size": size, "status": "new"})
+            continue
+        item = {"name": name, "size": size, "upload_id": m["id"]}
+        if m.get("complete"):
+            jf = JOBS / m["id"] / "job.json"
+            job = json.loads(jf.read_text()) if jf.exists() else {}
+            item |= {"status": "uploaded", "job_state": job.get("state"),
+                     "map_name": (job.get("result") or {}).get("name"), "new_map": bool(m.get("new_map"))}
+        else:
+            part = UPLOADS / f"{m['id']}.part"
+            active = part.exists() and time.time() - part.stat().st_mtime < UPLOAD_ACTIVE_SECONDS
+            item |= {"status": "uploading" if active else "paused", "offset": _offset(m)}
+        out.append(item)
+    return out
 
 
 @app.get("/api/uploads/{uid}")
