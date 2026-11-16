@@ -52,3 +52,21 @@ python datasets/eval_queries.py queries.jsonl --map-id <tile 1> --map-id <tile 2
    checkpoint resume and throughput, then scale out.
 
 `controller.py --provider vast` without `--live` prints what it would do and never rents anything.
+
+## Measured: provisioning a rented worker (2026-11-16)
+
+One interruptible RTX 3090 on Vast.ai (Quebec, bid $0.152/h), stock `ubuntu:24.04` image, no registry:
+
+| Step | Time |
+|---|---|
+| `create instance` to container running | ~24 s |
+| `apt-get install curl zstd` | 10 s |
+| Worker environment from R2 (4.3 GB zstd: interpreter, venv, model weights, 16 system libraries) download + decompress + extract | 103 s |
+| Imports + GPU check (torch CUDA, pycolmap `has_cuda`, reconstructor modules) | 3 s |
+| **Total, create to GPU-ready worker** | **~2 min 20 s** |
+
+- The payload is built from the worker image (`placeframe-worker:local`) and fetched with a pre-signed GET URL, so no
+  R2 keys go to the rented host (Vast hosts can see instance environment variables).
+- Offers go stale quickly: 3 of the 4 cheapest returned `no_such_ask`. The launcher must walk down the offer list.
+- `vastai destroy instance` asks for confirmation; pipe `y` into it in scripts.
+- Home to R2: upload 39 Mbit/s (home uplink), download 676 Mbit/s.
