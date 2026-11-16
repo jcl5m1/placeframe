@@ -366,8 +366,17 @@ def _watchdog() -> dict:
         day = [r for r in rows if r.get("ts", "") >= cutoff]
         open_inc = sum(1 for r in day if r.get("status") == "needs_attention")
         recent = [{"ts": r["ts"], "kind": r["kind"], "status": r["status"], "summary": r["summary"][:140]} for r in day[-5:]]
+        # Open problems for the dashboard banner: unresolved, one per kind + summary (re-raised incidents collapse).
+        latest: dict[tuple, dict] = {}
+        for r in day:
+            latest[(r.get("kind"), r.get("summary"))] = r
+        problems = [{"ts": r["ts"], "kind": r["kind"], "summary": r["summary"][:200],
+                     "evidence": (r.get("evidence") or "")[-600:]}
+                    for r in latest.values() if r.get("status") == "needs_attention"]
+    else:
+        problems = []
     return {"last_run": st.get("last_run"), "last_actions": (st.get("last_actions") or [])[-5:],
-            "open_24h": open_inc, "recent": recent[::-1]}
+            "open_24h": open_inc, "recent": recent[::-1], "problems": sorted(problems, key=lambda r: r["ts"], reverse=True)}
 
 
 STEP_LINE = re.compile(r"\[prior-mapper\]|\[mapper\]|\[reconstructing\]|Global bundle adjustment|Retriangulation|"

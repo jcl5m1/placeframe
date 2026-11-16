@@ -38,6 +38,11 @@ IDLE_CPU_PCT = 25        # ... and the worker is (nearly) idle -> hung
 LOG_MAX_MB = 300         # truncate (keep tail) above this
 LOG_KEEP_MB = 20
 DISK_MIN_GB = 15
+HOME_WORKER_PAUSED = HOME / "pf_fleet" / "home_worker_paused"  # present while a fleet run has the queue
+MEM_MIN_AVAILABLE_GB = 3.0
+SWAP_MAX_USED = 0.75
+MEM_LOW_WITH_SWAP_GB = 8.0
+RECON_IDLE_MAX_GB = 8.0
 ONE_SHOT = ("initialize-", "create-database", "migrate-database", "auth-initializer")
 
 sys.path.insert(0, str(REPO))
@@ -143,7 +148,7 @@ class Watchdog:
     # ----------------------------------------------------------------------- checks
     def run(self) -> None:
         for check in (self.services, self.containers, self.server_builds, self.merge_jobs, self.study,
-                      self.disk, self.logs):
+                      self.disk, self.memory, self.logs):
             try:
                 check()
             except Exception as e:  # a broken check must never stop the others
@@ -178,6 +183,9 @@ class Watchdog:
         rc, out = docker("ps -a --filter name=placeframe- --format '{{.Names}}\t{{.State}}\t{{.Status}}'")
         bad = [l for l in out.splitlines() if l and not any(s in l.split("\t")[0] for s in ONE_SHOT)
                and l.split("\t")[1] not in ("running",)]
+        # The home reconstructor is stopped on purpose while rented GPUs serve the queue (fleet runs).
+        if HOME_WORKER_PAUSED.exists():
+            bad = [l for l in bad if not l.startswith("placeframe-reconstructor-cuda-1")]
         if bad:
             ev = "\n".join(bad)
             for name in [l.split("\t")[0] for l in bad]:
@@ -347,6 +355,30 @@ class Watchdog:
             fh.seek(start)
             return fh.read().decode(errors="replace").splitlines()
 
+    def memory(self) -> None:
+        """Memory pressure starves everything (a 7,242-image merge pushed the host into swap for an hour: slow builds,
+        failed DNS, an unreachable dashboard, then the kernel killed the reconstructor). Restart an idle reconstructor
+        that holds memory between builds; report pressure with the biggest processes."""
+        info = {line.split(":")[0]: int(line.split()[1]) for line in Path("/proc/meminfo").read_text().splitlines()}
+        avail_gb = info["MemAvailable"] / 1e6
+        swap_used = 1 - info["SwapFree"] / info["SwapTotal"] if info.get("SwapTotal") else 0.0
+        _, mem = docker("stats --no-stream --format '{{.MemUsage}}' placeframe-reconstructor-cuda-1")
+        recon_gb = _gb(mem.split("/")[0]) if "/" in mem else 0.0
+        _, active = docker("exec placeframe-postgres-1 psql -U postgres -d placeframe -At -c "
+                           "\"select count(*) from reconstructions where status not in ('succeeded','failed','cancelled')\"")
+        idle = active.strip() == "0"
+        if idle and recon_gb > RECON_IDLE_MAX_GB:
+            fixed = self.act(f"restart idle reconstructor holding {recon_gb:.1f} GB",
+                             "sg docker -c 'docker restart placeframe-reconstructor-cuda-1'", 180)
+            self.incident("memory-held", f"idle reconstructor held {recon_gb:.1f} GB between builds; restarted",
+                          mem, fixed=fixed, target="reconstructor-memory")
+        # Swap stays occupied long after an episode, so a full swap only counts while memory is also short.
+        if avail_gb < MEM_MIN_AVAILABLE_GB or (swap_used > SWAP_MAX_USED and avail_gb < MEM_LOW_WITH_SWAP_GB):
+            top = sh("ps -eo rss,comm --sort=-rss | head -6")[1]
+            self.incident("memory-pressure", f"only {avail_gb:.1f} GB memory available, swap {swap_used:.0%} used "
+                          f"(reconstructor {recon_gb:.1f} GB{'' if idle else ', build running'})",
+                          top, target="memory")
+
     def disk(self) -> None:
         free = shutil.disk_usage(HOME).free / 1e9
         if free >= DISK_MIN_GB:
@@ -404,6 +436,14 @@ def main() -> None:
     a = ap.parse_args()
     Watchdog(a.dry_run).run()
 
+
+
+def _gb(text: str) -> float:
+    text = text.strip()
+    for unit, f in (("GiB", 1.074), ("MiB", 1.074e-3), ("KiB", 1.024e-6), ("GB", 1.0), ("MB", 1e-3), ("kB", 1e-6), ("B", 1e-9)):
+        if text.endswith(unit):
+            return float(text[:-len(unit)]) * f
+    return 0.0
 
 if __name__ == "__main__":
     main()

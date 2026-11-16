@@ -177,6 +177,25 @@ def _group_items(group: str) -> list[dict]:
     return jobs
 
 
+@app.post("/api/incidents/dismiss")
+async def dismiss_incident(body: dict, who: str = Depends(user)):
+    """Mark a watchdog problem as handled: every unresolved incident with the same kind and summary."""
+    path = Path.home() / "pf_watchdog" / "incidents.jsonl"
+    kind, summary = body.get("kind"), body.get("summary")
+    with _lock:
+        rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+        n = 0
+        for r in rows:
+            if r.get("kind") == kind and r.get("summary", "")[:200] == summary and r.get("status") == "needs_attention":
+                r.update(status="dismissed", resolution=f"dismissed by {who} on the dashboard",
+                         resolved_at=time.strftime("%Y-%m-%d %H:%M:%S"))
+                n += 1
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text("".join(json.dumps(r) + "\n" for r in rows))
+        tmp.replace(path)
+    return {"dismissed": n}
+
+
 @app.post("/api/maps/{map_id}/folder")
 async def set_map_folder(map_id: str, body: dict, who: str = Depends(user)):
     folder = _clean_folder(str(body.get("folder") or ""))

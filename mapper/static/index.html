@@ -71,6 +71,8 @@
     map and a new, fused map is built. Uploads resume automatically — if the connection drops or you close the page,
     pick the same file again and it continues where it stopped.</p>
 
+  <section id="alerts" class="hidden" style="border-color:var(--bad);background:rgba(255,107,107,.08)"></section>
+
   <section id="loginBox">
     <h2>Log in</h2>
     <div class="row">
@@ -515,6 +517,25 @@ function progressBlock(done, total, label, rate, eta, extra) {
     <div class="top"><span class="nums">${esc(label || '')} · ${done.toLocaleString()}/${total.toLocaleString()} (${p.toFixed(1)}%)</span>
     <span class="nums">${rateTxt(rate)}${eta != null ? ' · stage ETA ' + dur(eta) : ''}${extra || ''}</span></div>`;
 }
+// Problems the watchdog found and could not fix stay at the top of the page until someone dismisses them.
+function renderProblems(problems) {
+  const box = $('alerts');
+  box.classList.toggle('hidden', !problems.length || !token);
+  if (!problems.length) { box.innerHTML = ''; return; }
+  const sig = JSON.stringify(problems.map(p => [p.kind, p.summary, p.ts]));
+  if (box.dataset.sig === sig) return;  // don't redraw (and close open details) every 4 s
+  box.dataset.sig = sig;
+  box.innerHTML = `<h2 style="color:var(--bad)">⚠ ${problems.length} problem${problems.length > 1 ? 's' : ''} need${problems.length > 1 ? '' : 's'} attention</h2>`
+    + problems.map((p, i) => `<div class="item"><div class="top"><span><b>${esc(p.summary)}</b>
+        <span class="meta"> · ${esc(p.kind)} · since ${esc(p.ts.slice(5, 16))}</span></span>
+        <button class="ghost" data-dismiss="${i}">Dismiss</button></div>
+        ${p.evidence ? `<details><summary class="meta">details</summary><pre>${esc(p.evidence)}</pre></details>` : ''}</div>`).join('');
+  box.querySelectorAll('button[data-dismiss]').forEach(b => b.onclick = async () => {
+    const p = problems[+b.dataset.dismiss];
+    await api('incidents/dismiss', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: p.kind, summary: p.summary }) });
+    box.dataset.sig = ''; pollStatus();
+  });
+}
 function renderStatus(s) {
   const m = s.machine || {}, h = s.history || [], c = s.containers || {};
   const rc = c['reconstructor-cuda'] || {};
@@ -554,6 +575,7 @@ function renderStatus(s) {
       <div class="nums" style="margin-top:6px">${d}/${n} variants done · <a href="cost/" target="_blank">${d === n ? 'cost report' : 'preliminary cost report (live)'} ↗</a></div><div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">${list}</div></div>`);
   }
   const w = s.watchdog;
+  renderProblems((w && w.problems) || []);
   if (w) {
     const age = w.last_run ? (Date.now() / 1000 - w.last_run) : null;
     const ok = age != null && age < 600;

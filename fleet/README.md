@@ -87,7 +87,9 @@ Lessons, now in `broker.py`: bid 1.5x the minimum (not 1.1x) to be outbid less, 
 attempts (limit 5), log Vast's reason for every lost instance, and count hosts' download charges (each instance pulls
 the 4.3 GB environment) in the spend estimate: the resume test cost ~$0.21, mostly not GPU time.
 
-Run it (the home reconstructor competes for the same queue; pause it to send everything to the fleet):
+Run it (the home reconstructor competes for the same queue; to send everything to the fleet, create
+`~/pf_fleet/home_worker_paused` so the watchdog leaves it stopped, then `docker stop placeframe-reconstructor-cuda-1`;
+afterwards start it and delete the file):
 
 ```bash
 docker run -d --name pf-lease-agent --network placeframe_default --add-host <public host>:172.17.0.1 \

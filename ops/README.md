@@ -15,9 +15,12 @@ Each pass (~1 s when healthy) checks, and fixes what it can:
 | merge_jobs | job log silent 45 min in a local stage with idle pipeline processes; failed jobs | kill hung process, restart service (job resumes after its last finished stage) |
 | study | cost-study driver dead with variants pending; new variant errors | respawn (restart-safe) |
 | disk | < 15 GB free | archive finished job workspaces to `/mnt/hdd12t/placeframe_scratch` (symlinked) |
+| memory | < 3 GB available (or swap > 75% used while < 8 GB available); idle reconstructor holding > 8 GB | restart the idle reconstructor; report pressure with the biggest processes |
 | logs | log > 300 MB; log growing > 100 MB/h; reconstructor > 200k lines / 5 min | truncate keeping the last 20 MB; flag the noisy source |
 
 Long bundle adjustments are not stalls: a busy worker (CPU > 25%) that is still logging is left alone.
+Problems it cannot fix appear in a banner at the top of the mapper dashboard until dismissed there.
+While `~/pf_fleet/home_worker_paused` exists, a stopped home reconstructor is not restarted (fleet runs).
 State: `~/pf_watchdog/state.json`. Dry run: `python ops/watchdog.py --dry-run`.
 
 ## Tier 2 — agent escalation (every 10 min while a Claude session is open)
