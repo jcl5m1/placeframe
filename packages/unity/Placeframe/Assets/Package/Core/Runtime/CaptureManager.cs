@@ -10,6 +10,9 @@ using ICSharpCode.SharpZipLib.Tar;
 using PlaceframeApiClient.Model;
 using R3;
 using UnityEngine;
+#if UNITY_ANDROID
+using UnityEngine.Android;
+#endif
 using DeviceType = PlaceframeApiClient.Model.DeviceType;
 
 namespace Placeframe.Core
@@ -21,6 +24,15 @@ namespace Placeframe.Core
         private static IDisposable _subscriptions;
         private static Guid _sessionId;
         private static StreamWriter _poseWriter;
+
+        // The device location sampled while a capture records (the most accurate fix seen), written to
+        // location.json next to manifest.json so the server can place maps built from the capture on the globe.
+        private const string LocationFileName = "location.json";
+        private const float LocationDesiredAccuracyMeters = 10f;
+        private const float LocationUpdateDistanceMeters = 1f;
+        private const int LocationPermissionWaitSeconds = 20;
+        private static CancellationTokenSource _locationSampling;
+        private static LocationInfo? _bestLocation;
 
         public static void Initialize(ICameraProvider cameraProvider)
         {
@@ -40,6 +52,10 @@ namespace Placeframe.Core
             Directory.CreateDirectory(Path.Combine(sessionDirectory, "rig0", "camera0"));
 
             _poseWriter = new StreamWriter(Path.Combine(sessionDirectory, "rig0", "frames.csv")) { AutoFlush = true };
+
+            _bestLocation = null;
+            _locationSampling = new CancellationTokenSource();
+            SampleLocation(_locationSampling.Token).Forget();
             _poseWriter.WriteLine("timestamp,tx,ty,tz,qx,qy,qz,qw");
 
             var cameraConfigObservable = _cameraProvider
@@ -69,6 +85,8 @@ namespace Placeframe.Core
         {
             if (_subscriptions == null)
                 throw new InvalidOperationException("Capture not running");
+
+            StopLocationSampling(SessionDir(_sessionId.ToString()));
 
             UniTask
                 .RunOnThreadPool(() =>
@@ -144,6 +162,63 @@ namespace Placeframe.Core
 
             if (Directory.Exists(SessionDir(id.ToString())))
                 Directory.Delete(SessionDir(id.ToString()), recursive: true);
+        }
+
+        private static async UniTaskVoid SampleLocation(CancellationToken cancellationToken)
+        {
+#if UNITY_ANDROID
+            if (!Permission.HasUserAuthorizedPermission(Permission.FineLocation))
+                Permission.RequestUserPermission(Permission.FineLocation);
+#endif
+            for (var waited = 0; !Input.location.isEnabledByUser; waited++)
+            {
+                if (waited >= LocationPermissionWaitSeconds)
+                    return;
+                if (await UniTask.Delay(TimeSpan.FromSeconds(1), cancellationToken: cancellationToken).SuppressCancellationThrow())
+                    return;
+            }
+
+            Input.location.Start(LocationDesiredAccuracyMeters, LocationUpdateDistanceMeters);
+            while (Input.location.status != LocationServiceStatus.Failed)
+            {
+                if (Input.location.status == LocationServiceStatus.Running)
+                {
+                    var fix = Input.location.lastData;
+                    if (_bestLocation == null || fix.horizontalAccuracy < _bestLocation.Value.horizontalAccuracy)
+                        _bestLocation = fix;
+                }
+                if (await UniTask.Delay(TimeSpan.FromSeconds(1), cancellationToken: cancellationToken).SuppressCancellationThrow())
+                    return;
+            }
+        }
+
+        private static void StopLocationSampling(string sessionDirectory)
+        {
+            _locationSampling?.Cancel();
+            _locationSampling?.Dispose();
+            _locationSampling = null;
+            Input.location.Stop();
+
+            if (_bestLocation is not LocationInfo fix)
+                return;
+
+            // altitude: Android reports metres above the WGS84 ellipsoid, iOS above mean sea level (tens of metres
+            // apart); either is close enough for selecting maps within ~100 m.
+            File.WriteAllText(
+                Path.Combine(sessionDirectory, LocationFileName),
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{{\"latitude\": {0:R}, \"longitude\": {1:R}, \"altitude\": {2:R}, \"horizontal_accuracy\": {3:R}, "
+                        + "\"vertical_accuracy\": {4:R}, \"timestamp\": {5:R}, \"source\": \"{6}\"}}",
+                    (double)fix.latitude,
+                    (double)fix.longitude,
+                    (double)fix.altitude,
+                    (double)fix.horizontalAccuracy,
+                    (double)fix.verticalAccuracy,
+                    fix.timestamp,
+                    Application.platform
+                )
+            );
         }
 
         private static string SessionDir(string name) => Path.Combine(_recordingsRoot, name);
