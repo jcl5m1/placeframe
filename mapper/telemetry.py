@@ -246,6 +246,8 @@ class Telemetry:
             odo = j.get("odometry") or "openvio"
             names = ["calibrate", f"{odo}-export", f"{odo}-run", "stitch", "views", "capture", "register", "merge",
                      "reconstruct", "publish", "geolocate"]
+            if j.get("new_map"):  # a recording built as a map of its own skips registration and merging
+                names = [n for n in names if n not in ("register", "merge")]
             done = [s for s in names if (wd / f".done-{s}").exists()]
             cur = next((s for s in names if s not in done), None) if j["state"] == "running" else None
             rec_s = _recording_s(wd) or _guess_recording_s(Path(j["file"]))

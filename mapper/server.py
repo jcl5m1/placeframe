@@ -39,6 +39,9 @@ REPO = HERE.parent
 DATA = Path(os.environ.get("MAPPER_DATA", Path.home() / "pf_mapper"))
 UPLOADS, JOBS = DATA / "uploads", DATA / "jobs"
 HOLD = DATA / "HOLD"
+# Map folders ("experiments/datasets/7-Scenes"): a view-only grouping kept by this service, so Placeframe map names
+# (seen by every client) stay unchanged. Map id -> folder path; maps not listed are at the top level.
+FOLDERS = DATA / "map_folders.json"
 CHUNK_MAX = 64 * 1024 * 1024
 ALLOWED_EXT = {".insv"}
 
@@ -55,8 +58,9 @@ REALM = "placeframe-dev"
 ODOMETRY = ("openvio", "openvins")  # add_recording_to_map.py --odometry; first = default
 
 
-def stages(odometry: str) -> list[str]:  # mirrors add_recording_to_map.stages()
-    return ["calibrate", f"{odometry}-export", f"{odometry}-run", "stitch", "views", "capture", "register", "merge",
+def stages(odometry: str, new_map: bool = False) -> list[str]:  # mirrors add_recording_to_map.stages()
+    merge = [] if new_map else ["register", "merge"]
+    return ["calibrate", f"{odometry}-export", f"{odometry}-run", "stitch", "views", "capture", *merge,
             "reconstruct", "publish", "geolocate"]
 
 app = FastAPI(title="Placeframe map updater")
@@ -102,18 +106,49 @@ async def maps(request: Request, who: str = Depends(user)):
         r = await c.get(f"{SERVER}/localization-maps", headers={"Authorization": token})
     r.raise_for_status()
     produced = _lineage()
+    folders = _folders()
     _base_names.update({m["id"]: m.get("name") or m["id"][:8] for m in r.json()})
     items = []
     for m in r.json():
         chain = _chain(m["id"], produced)
         items.append({"id": m["id"], "name": m.get("name") or m["id"][:8], "active": m.get("active"),
                       "created_at": m.get("created_at"), "base_map_id": chain["base_map_id"],
-                      "recordings": len(chain["recordings"])})
+                      "recordings": len(chain["recordings"]), "folder": folders.get(m["id"], "")})
     by_id = {m["id"]: m for m in items}
     for m in items:
         base = by_id.get(m["base_map_id"])
         m["base_name"] = base["name"] if base else m["base_map_id"][:8]
     return sorted(items, key=lambda m: (not m["active"], m["created_at"] or ""), reverse=False)
+
+
+@app.post("/api/maps/{map_id}/folder")
+async def set_map_folder(map_id: str, body: dict, who: str = Depends(user)):
+    folder = _clean_folder(str(body.get("folder") or ""))
+    _set_folder(map_id, folder)
+    return {"id": map_id, "folder": folder}
+
+
+def _folders() -> dict[str, str]:
+    try:
+        return json.loads(FOLDERS.read_text())
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+def _set_folder(map_id: str, folder: str) -> None:
+    with _lock:
+        f = _folders()
+        if folder:
+            f[map_id] = folder
+        else:
+            f.pop(map_id, None)
+        tmp = FOLDERS.with_suffix(".tmp")
+        tmp.write_text(json.dumps(f, indent=1, sort_keys=True))
+        tmp.replace(FOLDERS)
+
+
+def _clean_folder(folder: str) -> str:
+    return "/".join(part.strip() for part in folder.replace("\\", "/").split("/") if part.strip())
 
 
 @app.get("/api/maps/{map_id}/contents")
@@ -160,6 +195,8 @@ def _chain(map_id: str, produced: dict[str, dict]) -> dict:
         seen.add(cur)
         j = produced[cur]
         recs.append(_recording(j))
+        if not j.get("map_id"):  # built as a new map: the recording is the map's own original capture
+            break
         cur = j["map_id"]
     return {"base_map_id": cur, "recordings": recs[::-1]}
 
@@ -172,6 +209,11 @@ def _recording(j: dict) -> dict:
     return {"job_id": j["id"], "filename": j["filename"], "recorded": recorded, "uploaded": j.get("created"),
             "state": j["state"], "user": j.get("user"), "odometry": j.get("odometry"),
             "into_map": j["map_id"], "produced_map": r.get("map_id"), "produced_name": r.get("name")}
+
+
+def _new_map_name(filename: str) -> str:
+    recorded = _recording({"id": "", "filename": filename, "map_id": None, "state": ""})["recorded"]
+    return f"X5 recording {recorded or Path(filename).stem}"
 
 
 def _default_name(map_id: str, filename: str) -> str:
@@ -246,8 +288,11 @@ async def create_upload(body: dict, who: str = Depends(user)):
     size = int(body.get("size", 0))
     if Path(name).suffix.lower() not in ALLOWED_EXT:
         raise HTTPException(400, "upload the raw .insv recording")
-    if size <= 0 or not body.get("map_id"):
-        raise HTTPException(400, "size and map_id are required")
+    body["new_map"] = bool(body.get("new_map"))
+    if body["new_map"]:
+        body["map_id"] = None
+    if size <= 0 or not (body.get("map_id") or body["new_map"]):
+        raise HTTPException(400, "size and either map_id or new_map are required")
     body["odometry"] = body.get("odometry") or ODOMETRY[0]
     if body["odometry"] not in ODOMETRY:
         raise HTTPException(400, f"odometry must be one of {', '.join(ODOMETRY)}")
@@ -256,12 +301,14 @@ async def create_upload(body: dict, who: str = Depends(user)):
         for p in UPLOADS.glob("*.json"):
             m = json.loads(p.read_text())
             if m["fingerprint"] == fp and not m.get("complete"):
-                m.update({k: body[k] for k in ("map_id", "new_name", "replace", "odometry") if k in body})
+                m.update({k: body[k] for k in ("map_id", "new_map", "folder", "new_name", "replace", "odometry")
+                          if k in body})
                 _save(m)
                 return {"id": m["id"], "offset": _offset(m), "size": m["size"], "resumed": True}
         uid = uuid.uuid4().hex[:12]
         meta = {"id": uid, "fingerprint": fp, "user": who, "filename": name, "size": size,
-                "map_id": body["map_id"], "new_name": body.get("new_name") or None,
+                "map_id": body["map_id"], "new_map": body["new_map"], "folder": _clean_folder(str(body.get("folder") or "")),
+                "new_name": body.get("new_name") or None,
                 "replace": bool(body.get("replace")), "odometry": body["odometry"], "created": time.time(),
                 "complete": False}
         _save(meta)
@@ -315,7 +362,8 @@ def _create_job(upload: dict) -> str:
     jd = JOBS / jid
     jd.mkdir(parents=True, exist_ok=True)
     job = {"id": jid, "upload": upload["id"], "file": upload["path"], "filename": upload["filename"],
-           "map_id": upload["map_id"], "new_name": upload.get("new_name"), "replace": upload.get("replace"),
+           "map_id": upload["map_id"], "new_map": bool(upload.get("new_map")), "folder": upload.get("folder") or "",
+           "new_name": upload.get("new_name"), "replace": upload.get("replace"),
            "odometry": upload.get("odometry") or ODOMETRY[0], "user": upload["user"], "state": "queued", "created": time.time()}
     (jd / "job.json.tmp").write_text(json.dumps(job, indent=2))
     (jd / "job.json.tmp").replace(jd / "job.json")
@@ -349,9 +397,11 @@ def _worker() -> None:
         if j["state"] == "succeeded":
             continue
         _set(jid, state="running", started=time.time(), error=None)
-        cmd = [sys.executable, "-u", str(REPO / "add_recording_to_map.py"), j["file"], "--map", j["map_id"],
+        target = ["--new-map"] if j.get("new_map") else ["--map", j["map_id"]]
+        cmd = [sys.executable, "-u", str(REPO / "add_recording_to_map.py"), j["file"], *target,
                "--job-dir", str(JOBS / jid / "work"), "--odometry", j.get("odometry") or ODOMETRY[0]]
-        cmd += ["--name", j.get("new_name") or _default_name(j["map_id"], j["filename"])]
+        default = _new_map_name(j["filename"]) if j.get("new_map") else _default_name(j["map_id"], j["filename"])
+        cmd += ["--name", j.get("new_name") or default]
         if j.get("replace"):
             cmd.append("--replace")
         with open(JOBS / jid / "log.txt", "a") as log:
@@ -360,7 +410,12 @@ def _worker() -> None:
             rc = subprocess.call(cmd, stdout=log, stderr=subprocess.STDOUT, cwd=REPO)
         result = JOBS / jid / "work" / "result.json"
         if rc == 0 and result.exists():
-            _set(jid, state="succeeded", finished=time.time(), result=json.loads(result.read_text()))
+            res = json.loads(result.read_text())
+            # A merged map goes in its base map's folder; a new map in the folder chosen at upload.
+            folder = j.get("folder") if j.get("new_map") else _folders().get(j["map_id"], "")
+            if folder and res.get("map_id"):
+                _set_folder(res["map_id"], folder)
+            _set(jid, state="succeeded", finished=time.time(), result=res)
         else:
             _set(jid, state="failed", finished=time.time(), error=f"exit code {rc} — see log")
 
@@ -376,7 +431,7 @@ async def jobs(who: str = Depends(user)):
             continue
         log = jd.parent / "log.txt"
         lines = log.read_text(errors="replace").splitlines() if log.exists() else []
-        names = stages(j.get("odometry") or ODOMETRY[0])
+        names = stages(j.get("odometry") or ODOMETRY[0], bool(j.get("new_map")))
         done = [s for s in names if (jd.parent / "work" / f".done-{s}").exists()]
         current = next((s for s in names if s not in done), None) if j["state"] == "running" else None
         out.append(j | {"stages": names, "done": done, "current": current, "log": lines[-60:],

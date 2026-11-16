@@ -46,6 +46,17 @@
   .pill.run { color:var(--accent); border-color:rgba(76,194,255,.45); } .pill.ok { color:var(--ok); border-color:rgba(62,207,142,.35); }
   .pill.wait { color:var(--warn); border-color:rgba(245,184,75,.4); }
   .bar.thin { height:6px; }
+  .modes { display:flex; gap:18px; margin:4px 0 6px; } .modes label { display:flex; gap:6px; align-items:center; color:var(--ink); font-size:13px; margin:0; }
+  .picker { position:relative; }
+  .picker > button { width:100%; text-align:left; background:#0f1218; color:var(--ink); border:1px solid var(--line); font-weight:400; }
+  .picker > button::after { content:"\25BE"; float:right; color:var(--muted); }
+  .tree { position:absolute; z-index:5; left:0; right:0; top:100%; margin-top:4px; max-height:420px; overflow:auto;
+          background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:6px 8px; box-shadow:0 8px 24px rgba(0,0,0,.5); }
+  .tree details { margin-left:12px; } .tree > details { margin-left:0; }
+  .tree summary { cursor:pointer; color:var(--muted); padding:3px 0; user-select:none; }
+  .tree .mapitem { padding:4px 8px; margin-left:12px; border-radius:5px; cursor:pointer; }
+  .tree .mapitem:hover { background:#0f1218; } .tree .mapitem.sel { background:rgba(76,194,255,.15); }
+  .tree .mapitem .meta { margin-left:6px; }
   .light { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; vertical-align:-1px; background:#3a3f4a; }
   .light.ok { background:var(--ok); box-shadow:0 0 6px var(--ok); } .light.none { background:#5b6270; }
   .light.err { background:var(--bad); } .light.wait { background:var(--warn); animation:pulse 1s infinite alternate; }
@@ -81,8 +92,14 @@
   <section id="uploadBox" class="hidden">
     <h2 class="ph">New recordings</h2>
     <div class="row">
-      <div><label>Add to map</label><select id="map"></select></div>
-      <div><label>Name for the updated map (optional)</label><input id="newName" type="text" placeholder="default: original map + N recordings (dates)"></div>
+      <div><div class="modes">
+          <label><input type="radio" name="target" value="existing" checked> Add to an existing map</label>
+          <label><input type="radio" name="target" value="new"> Create a new map</label></div>
+        <div id="existingBox" class="picker"><button type="button" id="mapBtn">Loading maps…</button>
+          <div id="mapTree" class="tree hidden"></div><input type="hidden" id="map"></div>
+        <div id="newBox" class="hidden"><label>Folder for the new map (optional, e.g. <code>office/floor 2</code>)</label>
+          <input id="folder" type="text" list="folderList" placeholder="top level"><datalist id="folderList"></datalist></div></div>
+      <div><label id="nameLabel">Name for the updated map (optional)</label><input id="newName" type="text" placeholder="default: original map + N recordings (dates)"></div>
     </div>
     <div id="mapContents" class="contents"></div>
     <div class="row">
@@ -133,14 +150,7 @@ function showLogin(msg) {
 async function afterLogin() {
   $('loginBox').classList.add('hidden'); $('uploadBox').classList.remove('hidden'); $('jobsBox').classList.remove('hidden'); $('computeBox').classList.remove('hidden');
   pollStatus();
-  const maps = await (await api('maps')).json();
-  $('map').innerHTML = maps.map(m => {
-    const what = m.recordings ? `${esc(m.base_name)} + ${m.recordings} recording${m.recordings > 1 ? 's' : ''}` : 'original capture';
-    return `<option value="${m.id}">${esc(m.name)} — ${what}${m.active ? '' : ' (inactive)'}</option>`;
-  }).join('');
-  const saved = localStorage.getItem('pf_map');
-  if (saved && maps.some(m => m.id === saved)) $('map').value = saved;
-  showContents();
+  await loadMaps();
   pollJobs();
 }
 $('loginBtn').onclick = async () => {
@@ -154,6 +164,66 @@ $('p').addEventListener('keydown', e => { if (e.key === 'Enter') $('loginBtn').c
 
 // ---------------------------------------------------------------- what the selected map contains
 $('map').addEventListener('change', () => { localStorage.setItem('pf_map', $('map').value); showContents(); });
+
+// ---------------------------------------------------------------- map picker: folders as a collapsible tree
+let allMaps = [];
+const openFolders = new Set(JSON.parse(localStorage.getItem('pf_tree_open') || '[]'));
+async function loadMaps() {
+  allMaps = await (await api('maps')).json();
+  const saved = localStorage.getItem('pf_map');
+  const pick = allMaps.find(m => m.id === saved) || allMaps.find(m => m.active) || allMaps[0];
+  $('folderList').innerHTML = [...new Set(allMaps.map(m => m.folder).filter(Boolean))].sort().map(f => `<option value="${esc(f)}">`).join('');
+  selectMap(pick ? pick.id : '');
+}
+function mapLabel(m) {
+  const what = m.recordings ? `${esc(m.base_name)} + ${m.recordings} recording${m.recordings > 1 ? 's' : ''}` : 'original capture';
+  return `${esc(m.name)}<span class="meta">${what}${m.active ? '' : ' · inactive'}</span>`;
+}
+function selectMap(id) {
+  $('map').value = id;
+  const m = allMaps.find(x => x.id === id);
+  $('mapBtn').innerHTML = m ? `${m.folder ? '<span class="meta">' + esc(m.folder) + ' / </span>' : ''}${esc(m.name)}` : 'No maps';
+  $('mapTree').classList.add('hidden');
+  $('map').dispatchEvent(new Event('change'));
+}
+function renderTree() {
+  const root = { folders: {}, maps: [] };
+  for (const m of allMaps) {
+    let node = root;
+    for (const part of (m.folder || '').split('/').filter(Boolean)) node = node.folders[part] ??= { folders: {}, maps: [] };
+    node.maps.push(m);
+  }
+  const count = n => n.maps.length + Object.values(n.folders).reduce((a, f) => a + count(f), 0);
+  const draw = (node, path) => Object.keys(node.folders).sort().map(name => {
+      const p = path ? path + '/' + name : name, f = node.folders[name];
+      return `<details data-path="${esc(p)}"${openFolders.has(p) ? ' open' : ''}><summary>📁 ${esc(name)} <span class="meta">${count(f)}</span></summary>${draw(f, p)}</details>`;
+    }).join('') + node.maps.sort((a, b) => (b.active - a.active) || a.name.localeCompare(b.name)).map(m =>
+      `<div class="mapitem${m.id === $('map').value ? ' sel' : ''}" data-id="${m.id}">${mapLabel(m)}</div>`).join('');
+  $('mapTree').innerHTML = draw(root, '') || '<span class="meta">No maps</span>';
+  $('mapTree').querySelectorAll('.mapitem').forEach(el => el.onclick = () => selectMap(el.dataset.id));
+  $('mapTree').querySelectorAll('details').forEach(d => d.ontoggle = () => {
+    d.open ? openFolders.add(d.dataset.path) : openFolders.delete(d.dataset.path);
+    localStorage.setItem('pf_tree_open', JSON.stringify([...openFolders]));
+  });
+}
+$('mapBtn').onclick = () => { const t = $('mapTree'); if (t.classList.toggle('hidden')) return; renderTree(); };
+document.addEventListener('click', e => { if (!e.target.closest('#existingBox')) $('mapTree').classList.add('hidden'); });
+const newMapMode = () => document.querySelector('input[name=target]:checked').value === 'new';
+document.querySelectorAll('input[name=target]').forEach(r => r.onchange = () => {
+  const isNew = newMapMode();
+  $('existingBox').classList.toggle('hidden', isNew); $('newBox').classList.toggle('hidden', !isNew);
+  $('mapContents').classList.toggle('hidden', isNew);
+  $('nameLabel').textContent = isNew ? 'Name for the new map (optional)' : 'Name for the updated map (optional)';
+  $('newName').placeholder = isNew ? 'default: X5 recording <date>' : 'default: original map + N recordings (dates)';
+  $('replace').closest('label').classList.toggle('hidden', isNew);
+});
+async function moveToFolder(id) {
+  const m = allMaps.find(x => x.id === id);
+  const folder = prompt('Folder for "' + (m ? m.name : id) + '" (use / for subfolders; empty = top level)', m ? m.folder : '');
+  if (folder === null) return;
+  await api('maps/' + id + '/folder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ folder }) });
+  await loadMaps();
+}
 async function showContents() {
   const id = $('map').value, box = $('mapContents');
   if (!id) { box.innerHTML = ''; return; }
@@ -172,7 +242,11 @@ async function showContents() {
   const pend = c.pending.length
     ? `<div style="margin-top:8px"><b>Being added to this map:</b><ol>${c.pending.map(r =>
         `<li>${rec(r)} <span class="${r.state === 'failed' ? 'bad' : 'warn'}">${r.state}</span></li>`).join('')}</ol></div>` : '';
-  box.innerHTML = base + added + pend;
+  const cur = allMaps.find(m => m.id === id);
+  const folderLine = `<div class="meta" style="margin-bottom:6px">Folder: ${cur && cur.folder ? esc(cur.folder) : 'top level'}
+    <button class="ghost" id="moveBtn" style="padding:2px 8px;margin-left:6px">Move…</button></div>`;
+  box.innerHTML = folderLine + base + added + pend;
+  $('moveBtn').onclick = () => moveToFolder(id);
 }
 
 // ---------------------------------------------------------------- collapsible panels (state kept in localStorage)
@@ -269,7 +343,8 @@ async function run(st) {
     if (!st.id) {
       const r = await api('uploads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
         filename: st.file.name, size: st.file.size, last_modified: st.file.lastModified,
-        map_id: $('map').value, new_name: $('newName').value.trim(), replace: $('replace').checked,
+        map_id: newMapMode() ? null : $('map').value, new_map: newMapMode(), folder: $('folder').value.trim(),
+        new_name: $('newName').value.trim(), replace: $('replace').checked,
         odometry: $('odometry').value }) });
       if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
       const j = await r.json(); st.id = j.id; st.offset = j.offset; st.resumed = j.resumed && j.offset > 0;

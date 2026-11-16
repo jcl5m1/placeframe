@@ -48,8 +48,9 @@ OPENVIO_NOISE = ["--imu.gyro_noise=4.144e-04", "--imu.accel_noise=2.94e-03",
 ODOMETRY = ("openvio", "openvins")
 
 
-def stages(odometry: str = "openvio") -> list[str]:
-    return ["calibrate", f"{odometry}-export", f"{odometry}-run", "stitch", "views", "capture", "register", "merge",
+def stages(odometry: str = "openvio", new_map: bool = False) -> list[str]:
+    merge = [] if new_map else ["register", "merge"]
+    return ["calibrate", f"{odometry}-export", f"{odometry}-run", "stitch", "views", "capture", *merge,
             "reconstruct", "publish", "geolocate"]
 
 
@@ -59,7 +60,9 @@ STAGES = stages()
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("insv")
-    ap.add_argument("--map", required=True, help="target localization map id")
+    target = ap.add_mutually_exclusive_group(required=True)
+    target.add_argument("--map", help="target localization map id (merge the recording into it)")
+    target.add_argument("--new-map", action="store_true", help="build the recording as a new map of its own")
     ap.add_argument("--job-dir", required=True)
     ap.add_argument("--name", default=None, help="name for the new map (default: '<old name> +1')")
     ap.add_argument("--replace", action="store_true", help="deactivate the old map once the new one is live")
@@ -109,8 +112,9 @@ def main() -> None:
                                           str(job / "ov.tum"), *pose_calib, "--stitch-work", str(job / "fisheye/work"), "--equirect",
                                           str(job / "equirect"), "--views", str(job / "views/work"),
                                           "-o", str(job / "capture"), "--step", "1"]))
-    run_stage("register", lambda: register(api, job, args.map, args.register_frames))
-    run_stage("merge", lambda: merge(api, job, args.map))
+    if not args.new_map:
+        run_stage("register", lambda: register(api, job, args.map, args.register_frames))
+        run_stage("merge", lambda: merge(api, job, args.map))
     run_stage("reconstruct", lambda: reconstruct(api, job, args.map, args.name))
     run_stage("publish", lambda: publish(api, job, args.map, args.replace))
     run_stage("geolocate", lambda: geolocate(api, job, insv))
@@ -368,18 +372,24 @@ def refine_priors(frames_csv: str, rig: str, map_poses: dict) -> tuple[str, int]
     return "\n".join([lines[0]] + body) + "\n", sum(1 for ts in odo if (rig, ts) in map_poses)
 
 
-def reconstruct(api: PlaceframeApi, job: Path, map_id: str, name: str | None) -> None:
+def reconstruct(api: PlaceframeApi, job: Path, map_id: str | None, name: str | None) -> None:
+    """Build the merged capture (map_id given) or, for a new map, the recording's own capture."""
     state = job / "reconstruct.json"
     st = json.loads(state.read_text()) if state.exists() else {}
-    old = api.get(f"/localization-maps/{map_id}")
-    st.setdefault("name", name or f"{old.get('name') or 'map'} +1")
+    if map_id:
+        tar, conv_path = job / "merged.tar", job / "conversion.json"
+        old = api.get(f"/localization-maps/{map_id}")
+        st.setdefault("name", name or f"{old.get('name') or 'map'} +1")
+    else:
+        tar, conv_path = job / "capture/capture.tar", job / "capture/conversion.json"
+        st.setdefault("name", name or f"new map from {job.parent.name}")
     if "capture_session_id" not in st:
-        log(f"uploading merged capture as '{st['name']}'")
-        st["capture_session_id"] = api.upload_capture(job / "merged.tar", st["name"])
+        log(f"uploading {'merged ' if map_id else ''}capture as '{st['name']}'")
+        st["capture_session_id"] = api.upload_capture(tar, st["name"])
         state.write_text(json.dumps(st))
     if "reconstruction_id" not in st:
-        conv = json.loads((job / "conversion.json").read_text())
-        options, reasons = choose_reconstruction_options(job / "merged.tar", conv)
+        conv = json.loads(conv_path.read_text())
+        options, reasons = choose_reconstruction_options(tar, conv)
         for r in reasons:
             log(f"  - {r}")
         st["reconstruction_id"] = api.post("/reconstructions", {"create": {"capture_session_id": st["capture_session_id"]},
@@ -399,9 +409,14 @@ def reconstruct(api: PlaceframeApi, job: Path, map_id: str, name: str | None) ->
         raise SystemExit(f"Reconstruction {status}")
 
 
-def publish(api: PlaceframeApi, job: Path, map_id: str, replace: bool) -> None:
+def publish(api: PlaceframeApi, job: Path, map_id: str | None, replace: bool) -> None:
+    """Create the map. A merge copies the base map's placement; a new map is created unplaced, and Placeframe places
+    it from the capture's location.json when the recording carried GPS."""
     st = json.loads((job / "reconstruct.json").read_text())
-    old = api.get(f"/localization-maps/{map_id}")
+    old = api.get(f"/localization-maps/{map_id}") if map_id else {
+        "position_x": 0.0, "position_y": 0.0, "position_z": 0.0, "rotation_x": 0.0, "rotation_y": 0.0,
+        "rotation_z": 0.0, "rotation_w": 1.0, "color": 0}
+    replace = replace and bool(map_id)
     try:
         new_map_id = api.get(f"/reconstructions/{st['reconstruction_id']}/localization_map")
     except httpx.HTTPStatusError:
