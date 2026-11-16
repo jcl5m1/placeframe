@@ -44,9 +44,13 @@ def main() -> None:
     ap.add_argument("--max-instances", type=int, default=1)
     ap.add_argument("--budget", type=float, default=2.0, help="stop renting once estimated spend reaches this ($)")
     ap.add_argument("--max-bid", type=float, default=0.30, help="highest $/h bid for one GPU")
-    ap.add_argument("--attempts", type=int, default=3)
+    ap.add_argument("--attempts", type=int, default=5, help="instances lost (not counting chaos kills) before giving up")
+    ap.add_argument("--bid-factor", type=float, default=1.5,
+                    help="bid = minimum bid x this: low bids get outbid (preempted) often")
     ap.add_argument("--url-hours", type=float, default=6)
     ap.add_argument("--chaos-kill-after", type=float, default=0, help="destroy each job's first instance after N s")
+    ap.add_argument("--chaos-after-checkpoint", action="store_true",
+                    help="destroy each job's first instance once it has saved its features checkpoint (tests resume)")
     ap.add_argument("--until-idle", action="store_true", help="exit when no job is active for 10 minutes")
     ap.add_argument("--interval", type=float, default=20)
     ap.add_argument("--provider", choices=["vast", "local"], default="vast",
@@ -112,19 +116,27 @@ def _watch(a, s3, bucket, code_key, state, rid, d, job, spent) -> None:
     if status == "running" and not inst.get("running_since"):
         inst["running_since"] = time.time()
         log("instance_running", reconstruction=rid, instance=inst["id"], dispatch=inst["dispatch"])
-    if a.chaos_kill_after and d["attempt"] == 1 and inst.get("running_since") and \
-            time.time() - inst["running_since"] > a.chaos_kill_after and not inst.get("chaos"):
+    checkpointed = a.chaos_after_checkpoint and job and "Contents" in s3.list_objects_v2(
+        Bucket=bucket, Prefix=f"{job['r2_prefix']}/checkpoints/features.npz")
+    timed_out = a.chaos_kill_after and inst.get("running_since") and \
+        time.time() - inst["running_since"] > a.chaos_kill_after
+    if d["attempt"] == 1 and not inst.get("chaos") and (checkpointed or timed_out):
         inst["chaos"] = True
         log("chaos_kill", reconstruction=rid, instance=inst["id"])
         _destroy(inst["id"], rid, "chaos")
         status = "unknown"
-    if info is None or status in LOST or (info.get("intended_status") == "stopped"):
+    gone = info is None or status in LOST or info.get("intended_status") == "stopped"
+    # Vast can report a starting container as exited for a moment: only a state seen on two checks counts.
+    inst["lost_checks"] = inst.get("lost_checks", 0) + 1 if gone and not inst.get("chaos") else (99 if gone else 0)
+    if inst["lost_checks"] >= 2:
         inst["ended"] = time.time()
-        log("instance_lost", reconstruction=rid, instance=inst["id"], status=status)
+        log("instance_lost", reconstruction=rid, instance=inst["id"], status=status,
+            intended=(info or {}).get("intended_status"), message=((info or {}).get("status_msg") or "")[:200],
+            chaos=bool(inst.get("chaos")))
         _destroy(inst["id"], rid, "lost")
         if job is None:
             d["status"] = "done"
-        elif d["attempt"] >= a.attempts or spent >= a.budget:
+        elif sum(1 for i in d["instances"] if not i.get("chaos")) >= a.attempts or spent >= a.budget:
             d["status"] = "abandoned"
             (BROKER / "outcome" / rid).write_text("abandoned")
             log("job_abandoned", reconstruction=rid, attempts=d["attempt"])
@@ -185,7 +197,7 @@ def _launch(a, dispatch: str, script: str) -> dict | None:
         return {"id": name, "offer": "local", "gpu": "local", "bid": 0.0, "geo": "home", "launched": time.time()}
     offers = json.loads(_vast(["search", "offers", OFFER_QUERY, "-i", "-o", "dph_total", "--raw"]) or "[]")
     for o in offers[:8]:
-        bid = round(max(o.get("min_bid") or 0, 0.0) * 1.1 + 0.005, 3)
+        bid = round(max(o.get("min_bid") or 0, 0.0) * a.bid_factor + 0.005, 3)
         if bid > a.max_bid:
             continue
         out = _vast(["create", "instance", str(o["id"]), "--image", "ubuntu:24.04", "--disk", "40",
@@ -194,8 +206,10 @@ def _launch(a, dispatch: str, script: str) -> dict | None:
         m = re.search(r"new_contract'?\"?:\s*(\d+)", out)
         if m:
             iid = int(m.group(1))
+            # Hosts may charge for downloads: every new instance pulls the ~4.3 GB worker environment.
+            down_cost = float(o.get("inet_down_cost") or 0) * 5.0
             return {"id": iid, "offer": o["id"], "gpu": o.get("gpu_name"), "bid": bid, "geo": o.get("geolocation"),
-                    "launched": time.time()}
+                    "download_cost": round(down_cost, 4), "launched": time.time()}
         log("offer_unavailable", dispatch=dispatch, offer=o["id"], detail=out.strip()[-120:])
     return None
 
@@ -221,7 +235,8 @@ def _destroy(iid, rid: str, reason: str) -> None:
 
 
 def _cost(d: dict) -> float:
-    return sum(i["bid"] * ((i.get("ended") or time.time()) - i["launched"]) / 3600 for i in d["instances"])
+    return sum(i["bid"] * ((i.get("ended") or time.time()) - i["launched"]) / 3600 + i.get("download_cost", 0)
+               for i in d["instances"])
 
 
 def _presign(s3, bucket: str, method: str, key: str, expires: int, dispatch: str) -> str:

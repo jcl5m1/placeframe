@@ -70,3 +70,29 @@ One interruptible RTX 3090 on Vast.ai (Quebec, bid $0.152/h), stock `ubuntu:24.0
 - Offers go stale quickly: 3 of the 4 cheapest returned `no_such_ask`. The launcher must walk down the offer list.
 - `vastai destroy instance` asks for confirmation; pipe `y` into it in scripts.
 - Home to R2: upload 39 Mbit/s (home uplink), download 676 Mbit/s.
+
+## Measured: credential-free remote jobs (2026-11-16)
+
+`lease_agent.py` (home, holds the Placeframe credentials) + `broker.py` (pre-signed R2 URLs, instances) +
+`remote_worker.py` (runs Placeframe's reconstruction unchanged on the rented GPU). Every URL issued and every
+transfer is logged to `~/pf_fleet/access_log.jsonl`.
+
+| Run | Result |
+|---|---|
+| Local GPU container as the "instance", 7-Scenes Heads (200 images) | succeeded in 4 min 41 s; localizes like a home build (100/100, 1.8 cm / 0.98°) |
+| Vast.ai, 7-Scenes Stairs (400 images) | first instance reported exited after 20 s; replacement A100 (Singapore, $0.225/h) built it in ~5 min; 330 images registered (home build: 334) |
+| Vast.ai resume test (first instance killed after its features checkpoint) | resume worked twice: the 2nd instance reused the features, the 3rd the features and matches; but 2 more instances were lost (one while Vast still showed it running: likely outbid), the 3-attempt limit was reached and the job failed |
+
+Lessons, now in `broker.py`: bid 1.5x the minimum (not 1.1x) to be outbid less, don't count deliberate kills as
+attempts (limit 5), log Vast's reason for every lost instance, and count hosts' download charges (each instance pulls
+the 4.3 GB environment) in the spend estimate: the resume test cost ~$0.21, mostly not GPU time.
+
+Run it (the home reconstructor competes for the same queue; pause it to send everything to the fleet):
+
+```bash
+docker run -d --name pf-lease-agent --network placeframe_default --add-host <public host>:172.17.0.1 \
+  -v placeframe_auth_data:/run/secrets:ro -v ~/pf_fleet:/root/pf_fleet -v <repo>/fleet:/fleet:ro \
+  -v <placeframe>/local/reconstructor-mapper.json:/etc/placeframe/mapper.json:ro \
+  --env-file ~/pf_fleet/local-worker.env --entrypoint /opt/uv/venv/bin/python placeframe-worker:local -u /fleet/lease_agent.py
+python fleet/broker.py --provider vast --max-instances 2 --budget 3 [--chaos-after-checkpoint] [--until-idle]
+```
