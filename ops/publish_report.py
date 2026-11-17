@@ -92,7 +92,7 @@ def _drive_player(m: re.Match, src: Path, rid: str, drive: dict) -> str:
     version = f"{st.st_size}:{int(st.st_mtime)}"
     if (drive.get(ref) or {}).get("version") != version:
         dest = f"{DRIVE_FOLDER}/{rid}/{Path(ref).name}"
-        subprocess.run(["rclone", "copyto", str(asset), dest], check=True)
+        subprocess.run(["rclone", "copyto", str(asset.resolve()), dest], check=True)  # the file, not a symlink to it
         url = subprocess.run(["rclone", "link", dest], check=True, capture_output=True, text=True).stdout.strip()
         found = re.search(r"(?:/d/|[?&]id=)([\w-]+)", url)
         if not found:
