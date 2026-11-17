@@ -88,10 +88,10 @@ request until you tell us which parts you want, and against which branch.
 |---|---|
 | Fix 1: restart the reconstructor after each job | [`64f0c372`](https://github.com/jcl5m1/placeframe/commit/64f0c372) |
 | Fix 2: limit progress output | [`d173cc56`](https://github.com/jcl5m1/placeframe/commit/d173cc56), [`4f217cdd`](https://github.com/jcl5m1/placeframe/commit/4f217cdd) |
-| Extension 1: prior-pose mapper | [`356939cc`](https://github.com/jcl5m1/placeframe/commit/356939cc) |
+| Extension 1: prior-pose mapper; merge reuse | [`356939cc`](https://github.com/jcl5m1/placeframe/commit/356939cc); [`1922a9ca`](https://github.com/jcl5m1/placeframe/commit/1922a9ca) |
 | Extension 2: merge registration and check | in our pipeline repository ([`a488978`](https://github.com/jcl5m1/placeframe-insta360/commit/a488978)) |
 | Extension 3: GPU bundle adjustment | worker image build in our pipeline repository (`gpu/`), no Placeframe code change |
-| Extension 4: tracked localization | [`549d0ef4`](https://github.com/jcl5m1/placeframe/commit/549d0ef4) (API, localizer, tracker, tests), worker threads [`f5251e25`](https://github.com/jcl5m1/placeframe/commit/f5251e25) |
+| Extension 4: tracked localization | [`549d0ef4`](https://github.com/jcl5m1/placeframe/commit/549d0ef4) (API, localizer, tracker, tests), worker threads [`f5251e25`](https://github.com/jcl5m1/placeframe/commit/f5251e25), session routing across processes [`c7fbbeeb`](https://github.com/jcl5m1/placeframe/commit/c7fbbeeb) |
 | Extension 6: query size parameter | [`683136a4`](https://github.com/jcl5m1/placeframe/commit/683136a4); adaptive rate in the app [`46d0838f`](https://github.com/jcl5m1/placeframe/commit/46d0838f) |
 | Extension 7: upright phone images | [`4b606387`](https://github.com/jcl5m1/placeframe/commit/4b606387) |
 | Extension 8: preemptible workers | [`4d7a7673`](https://github.com/jcl5m1/placeframe/commit/4d7a7673), [`2ba41ebf`](https://github.com/jcl5m1/placeframe/commit/2ba41ebf), heartbeat fix [`f75eeac3`](https://github.com/jcl5m1/placeframe/commit/f75eeac3) |
