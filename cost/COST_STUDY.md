@@ -60,6 +60,12 @@ capture; seconds per image as in the joined and merged maps):
 | Preprocessing (CPU) | ~50 min |
 | Stored: map (~1.15 GB) + capture kept for rebuilds (~2 GB) | ~3.2 GB |
 
+**Memory limit (found after the study).** The reconstructor holds every image's descriptors in RAM at full
+precision (~1.3 MB per image) and the matcher moves all of them to the GPU at once: the 9,072-image map peaked at
+18 GB of RAM. A ~19,700-image venue in one build would need ~26 GB, more than this machine (30 GB RAM, 24 GB GPU)
+can give it. Keeping descriptors in half precision and moving only each batch's pairs to the GPU (~13 GB) would fit;
+until then, build such a venue as two or more joined maps of up to ~10,000 images.
+
 ## 2. Rented, right-sized GPU
 
 The x4 map (9,072 images) built on one interruptible Vast.ai RTX 3090 with a host like ours (≥8 cores, ≥32 GB RAM),
