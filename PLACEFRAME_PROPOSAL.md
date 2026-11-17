@@ -92,6 +92,9 @@ Everything is on our fork's [`local/main`](https://github.com/jcl5m1/placeframe/
 one commit per change so each can be reviewed, picked or dropped on its own. Nothing will be opened as a pull
 request until you tell us which parts you want, and against which branch.
 
+**The fork and our pipeline repository are private for now: please send us the GitHub usernames of whoever should
+review them, and we will give them access.** Until then the commit links below will show GitHub's "not found" page.
+
 | Item | Commits |
 |---|---|
 | Fix 1: restart the reconstructor after each job | [`64f0c372`](https://github.com/jcl5m1/placeframe/commit/64f0c372) |
@@ -114,9 +117,10 @@ meant for upstream.
 
 ## Questions for you
 
-1. Would you take the two fixes (process restart, log volume) and half-precision descriptors as pull requests
+1. Which GitHub usernames should get access to our two repositories (see above)?
+2. Would you take the two fixes (process restart, log volume) and half-precision descriptors as pull requests
    against `dev`?
-2. Are the merge findings (piecewise registration and the shared-points check) useful for `dev_hh`'s merge flow?
-3. Server-side or client-side tracking: would you like the tracker and its evaluation tools as a reference, or
+3. Are the merge findings (piecewise registration and the shared-points check) useful for `dev_hh`'s merge flow?
+4. Server-side or client-side tracking: would you like the tracker and its evaluation tools as a reference, or
    ported to your client filter's interface?
-4. Should GPU bundle adjustment come back as an option for large captures, given the numbers above?
+5. Should GPU bundle adjustment come back as an option for large captures, given the numbers above?
