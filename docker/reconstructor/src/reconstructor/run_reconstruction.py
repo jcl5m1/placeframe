@@ -159,6 +159,17 @@ def run_reconstruction(
     if resumed is not None:
         keypoints, descriptors, global_descriptors, sizes = resumed
         keypoints, descriptors = KeypointsArrays(keypoints), DescriptorsArrays(descriptors)
+    reuse_from = _reuse_base()
+    if resumed is None and reuse_from is not None:
+        # A merge into an existing map: the map's images are the same files, so their features are taken from the
+        # base map's build; only the new recording's images are extracted.
+        base = checkpoints.load_features(s3_client, settings.reconstructions_bucket, reuse_from, reuse=True)
+        if base is not None:
+            wanted = {name for name, _ in image_list}
+            for name in wanted & set(base[0]):
+                keypoints[name], descriptors[name] = base[0][name], base[1][name]
+                global_descriptors[name], sizes[name] = base[2][name], base[3][name]
+            print(f"[reuse] features of {len(keypoints)}/{len(image_list)} images from {reuse_from}")
     for index, (image_name, camera_config) in enumerate(image_list):
         publisher.on_progress(index + 1)
 
@@ -167,7 +178,7 @@ def run_reconstruction(
 
         # Write image back to disk, so incremental_mapping samples the processed image for point cloud colorization
         image.save(image_path)
-        if resumed is not None:
+        if resumed is not None or image_name in keypoints:
             continue
         rgb_tensor = from_numpy(asarray(image, dtype=float32)).permute(2, 0, 1).div(255.0)
 
@@ -239,14 +250,23 @@ def run_reconstruction(
     matching_t0 = perf_counter()
     match_indices = checkpoints.load_matches(s3_client, settings.reconstructions_bucket, reconstruction_id)
     if match_indices is None:
-        match_indices = local_feature_matcher(
-            pairs,
-            keypoints,
-            descriptors,
-            sizes,
-            options.lightglue_batch_size(),
-            publisher.on_progress,
+        reused = _reused_matches(s3_client, settings.reconstructions_bucket, reuse_from, pairs)
+        todo = [pair for pair in pairs if pair not in reused]
+        match_indices = (
+            local_feature_matcher(
+                todo,
+                keypoints,
+                descriptors,
+                sizes,
+                options.lightglue_batch_size(),
+                publisher.on_progress,
+            )
+            if todo
+            else {}
         )
+        match_indices.update(reused)
+        if reused:
+            print(f"[reuse] matches of {len(reused)}/{len(pairs)} pairs from {reuse_from}")
         checkpoints.save_matches(s3_client, settings.reconstructions_bucket, reconstruction_id, match_indices)
     print(f"matching_features wall_time={perf_counter() - matching_t0:.2f}s pairs={len(pairs)}")
     if cuda.is_available():
@@ -307,3 +327,32 @@ def _store_capture_location(
 def _put_artifact(s3_client: Any, bucket: str, reconstruction_id: UUID, key: str, body: bytes) -> None:
     print(f"Putting object in bucket {bucket} with key {reconstruction_id}/{key}")
     s3_client.put_object(Bucket=bucket, Key=f"{reconstruction_id}/{key}", Body=body)
+
+
+# A merged capture names the map it extends (reuse.json, written by the merge tool), whose build kept its features
+# and matches; None for any other capture.
+def _reuse_base() -> str | None:
+    path = CAPTURE_SESSION_DIRECTORY / "reuse.json"
+    if not path.exists():
+        return None
+    return str(json.loads(path.read_text())["base_reconstruction_id"])
+
+
+# Matches of this build's pairs that the base map's build already computed (between two of the map's images, in
+# either order: indices are swapped for a reversed pair).
+def _reused_matches(
+    s3_client: Any, bucket: str, base_id: str | None, pairs: list[tuple[str, str]]
+) -> dict[tuple[str, str], tuple[Any, Any]]:
+    if base_id is None:
+        return {}
+    base = checkpoints.load_matches(s3_client, bucket, base_id, reuse=True)
+    if base is None:
+        return {}
+    reused: dict[tuple[str, str], tuple[Any, Any]] = {}
+    for a, b in pairs:
+        if (a, b) in base:
+            reused[(a, b)] = base[(a, b)]
+        elif (b, a) in base:
+            first, second = base[(b, a)]
+            reused[(a, b)] = (second, first)
+    return reused

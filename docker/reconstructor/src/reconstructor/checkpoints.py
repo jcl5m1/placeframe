@@ -11,13 +11,16 @@ from numpy import asarray, float16, float32, load, ndarray, savez
 # finished stage instead of starting over. Off unless RECONSTRUCTOR_CHECKPOINTS=1, because on a single local
 # worker the upload costs more than it saves.
 ENABLED = os.environ.get("RECONSTRUCTOR_CHECKPOINTS") == "1"
+# Keep the features and matches of every build (written once, after each stage) so a later merge into this map can
+# reuse them instead of extracting and matching the map's images again (see run_reconstruction: reuse.json).
+KEEP = os.environ.get("RECONSTRUCTOR_KEEP_FEATURES") == "1"
 PREFIX = "checkpoints"
 
 
 def load_features(
-    s3_client: Any, bucket: str, reconstruction_id: object
+    s3_client: Any, bucket: str, reconstruction_id: object, reuse: bool = False
 ) -> tuple[dict[str, ndarray], dict[str, ndarray], dict[str, ndarray], dict[str, tuple[int, int]]] | None:
-    arrays = _get(s3_client, bucket, reconstruction_id, "features")
+    arrays = _get(s3_client, bucket, reconstruction_id, "features", reuse)
     if arrays is None:
         return None
     names = [str(n) for n in arrays["names"]]
@@ -47,9 +50,9 @@ def save_features(
 
 
 def load_matches(
-    s3_client: Any, bucket: str, reconstruction_id: object
+    s3_client: Any, bucket: str, reconstruction_id: object, reuse: bool = False
 ) -> dict[tuple[str, str], tuple[ndarray, ndarray]] | None:
-    arrays = _get(s3_client, bucket, reconstruction_id, "matches")
+    arrays = _get(s3_client, bucket, reconstruction_id, "matches", reuse)
     if arrays is None:
         return None
     pairs = arrays["pairs"]
@@ -66,19 +69,22 @@ def save_matches(
     _put(s3_client, bucket, reconstruction_id, "matches", arrays)
 
 
-def _get(s3_client: Any, bucket: str, reconstruction_id: object, name: str) -> Any:
-    if not ENABLED:
+# reuse: read another (earlier) build's stage outputs regardless of the resume setting.
+def _get(s3_client: Any, bucket: str, reconstruction_id: object, name: str, reuse: bool = False) -> Any:
+    if not (ENABLED or reuse):
         return None
     try:
         body = s3_client.get_object(Bucket=bucket, Key=f"{reconstruction_id}/{PREFIX}/{name}.npz")["Body"].read()
     except Exception:
         return None
-    print(f"[checkpoint] resuming from {name} checkpoint ({len(body) / 1e6:.1f} MB)")
+    print(
+        f"[checkpoint] {'reusing' if reuse else 'resuming from'} {name} of {reconstruction_id} ({len(body) / 1e6:.1f} MB)"
+    )
     return load(BytesIO(body), allow_pickle=False)
 
 
 def _put(s3_client: Any, bucket: str, reconstruction_id: object, name: str, arrays: dict[str, ndarray]) -> None:
-    if not ENABLED:
+    if not (ENABLED or KEEP):
         return
     buffer = BytesIO()
     savez(buffer, **arrays)
