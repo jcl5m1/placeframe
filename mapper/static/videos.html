@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Placeframe · generated videos</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --ink:#e7e9ee; --muted:#9aa1ad; --line:#272c36; --accent:#4cc2ff; --bad:#ff6b6b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  main { max-width:1100px; margin:0 auto; padding:28px 16px 60px; }
+  h1 { font-size:20px; margin:0 0 4px; display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; }
+  .sub { color:var(--muted); margin:0 0 22px; }
+  .bar { display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
+  .bar input { flex:1; min-width:200px; background:#0f1218; color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:8px 10px; font:inherit; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,480px),1fr)); gap:16px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .card video { display:block; width:100%; aspect-ratio:16/9; background:#000; }
+  .info { padding:10px 14px 12px; }
+  .name { font-weight:600; word-break:break-all; }
+  .meta { color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; margin-top:2px; }
+  .meta a { color:var(--accent); text-decoration:none; }
+  .note { font-size:13px; margin-top:6px; white-space:pre-wrap; }
+  .empty, .err { color:var(--muted); padding:30px 0; text-align:center; } .err { color:var(--bad); }
+  code { font-size:12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Generated videos <span id="pageNav" style="font-size:13px;font-weight:400;min-width:220px"></span></h1>
+  <p class="sub">Every video rendered so far under <code id="root">the scratch folder</code>, newest first.
+    A <code>.txt</code> file with the same name next to a video is shown as its description.</p>
+  <div class="bar"><input id="q" type="search" placeholder="Filter by name, folder or description…"></div>
+  <div id="list" class="grid"></div>
+</main>
+<script src="../pf_ui.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => PfUI.esc(String(s));
+PfUI.pageNav($('pageNav'), 'videos');
+
+const mb = n => n >= 1e9 ? (n / 1e9).toFixed(2) + ' GB' : (n / 1e6).toFixed(1) + ' MB';
+const when = t => new Date(t * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+let videos = [];
+
+function render() {
+  const q = $('q').value.trim().toLowerCase();
+  const shown = videos.filter(v => !q || [v.name, v.folder, v.note].join(' ').toLowerCase().includes(q));
+  if (!shown.length) { $('list').innerHTML = `<div class="empty">${videos.length ? 'No video matches the filter.' : 'No videos yet.'}</div>`; return; }
+  $('list').innerHTML = shown.map(v => {
+    const src = 'file/' + v.path.split('/').map(encodeURIComponent).join('/');
+    return `<div class="card">
+      <video controls preload="metadata" src="${src}#t=0.1"></video>
+      <div class="info">
+        <div class="name">${esc(v.name)}</div>
+        <div class="meta">${v.folder ? esc(v.folder) + ' · ' : ''}${when(v.mtime)} · ${mb(v.size)} · <a href="${src}" download>download</a></div>
+        ${v.note ? `<div class="note">${esc(v.note)}</div>` : ''}
+      </div></div>`;
+  }).join('');
+}
+
+fetch('api/list').then(r => r.ok ? r.json() : r.text().then(t => Promise.reject(t || r.status)))
+  .then(d => { videos = d.videos; $('root').textContent = d.root; render(); })
+  .catch(e => { $('list').innerHTML = `<div class="err">Could not load the video list: ${esc(e)}</div>`; });
+$('q').addEventListener('input', render);
+</script>
+</body>
+</html>

@@ -12,6 +12,7 @@
     { id: 'dashboard', name: 'Mapper dashboard', folder: 'Project', url: `https://${HOST}/mapper/`, meta: 'uploads, jobs, compute' },
     { id: 'viewer', name: 'Map visualizer', folder: 'Project', url: `https://${HOST}:8130/`, meta: 'tailnet only' },
     { id: 'cost', name: 'Map cost study report', folder: 'Project', url: `https://${HOST}/mapper/cost/` },
+    { id: 'videos', name: 'Generated videos', folder: 'Project', url: `https://${HOST}/mapper/videos/`, meta: 'tailnet only' },
     { id: 'api', name: 'Placeframe API docs', folder: 'Placeframe', url: `https://${HOST}/schema` },
     { id: 'grafana', name: 'Logs (Grafana)', folder: 'Placeframe', url: `https://${HOST}/grafana/`, meta: 'tailnet only' },
     { id: 'db', name: 'Database (CloudBeaver)', folder: 'Placeframe', url: `https://${HOST}/cloudbeaver/`, meta: 'tailnet only' },

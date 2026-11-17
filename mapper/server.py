@@ -694,13 +694,65 @@ COST_REPORT = Path.home() / "pf_cost" / "report"
 
 @app.get("/cost/{name:path}")
 async def cost_report(name: str, request: Request):
-    # Tailnet only: <img> tags can't send the bearer token, so public (Funnel) requests are refused instead.
-    if request.headers.get("Tailscale-Funnel-Request"):
-        raise HTTPException(403, "cost report is only available on the tailnet")
+    _tailnet_only(request, "the cost report")
     path = (COST_REPORT / (name or "index.html")).resolve()
     if not path.is_relative_to(COST_REPORT.resolve()) or not path.is_file():
         raise HTTPException(404)
     return FileResponse(path, headers={"Cache-Control": "no-cache"})
+
+
+# Generated videos (track replays, renders): every video under the video folder. A "<name>.txt" next to a video is
+# shown as its description. The folder is on the SSD: listing the HDD scratch folder took ~10 s cold (and nothing
+# while the HDD was offline); the HDD keeps archives only.
+VIDEO_ROOT = Path(os.environ.get("MAPPER_VIDEO_ROOT", str(Path.home() / "pf_data" / "videos")))
+VIDEO_EXT = {".mp4", ".webm", ".mov", ".m4v"}
+VIDEO_SKIP = {"uploads", "datasets", "docker_archive"}
+
+
+def _tailnet_only(request: Request, what: str) -> None:
+    # <img>/<video> tags can't send the bearer token, so public (Funnel) requests are refused instead.
+    if request.headers.get("Tailscale-Funnel-Request"):
+        raise HTTPException(403, f"{what} is only available on the tailnet")
+
+
+@app.get("/videos/api/list")
+async def video_list(request: Request):
+    _tailnet_only(request, "the video gallery")
+    out = []
+    for dirpath, dirs, files in os.walk(VIDEO_ROOT):
+        if Path(dirpath) == VIDEO_ROOT:
+            dirs[:] = [d for d in dirs if d not in VIDEO_SKIP and not d.startswith("git_backup")]
+        for f in files:
+            p = Path(dirpath) / f
+            if p.suffix.lower() not in VIDEO_EXT:
+                continue
+            st = p.stat()
+            note = p.with_suffix(".txt")
+            rel = p.relative_to(VIDEO_ROOT).as_posix()
+            out.append({"path": rel, "name": p.stem, "folder": Path(rel).parent.as_posix().removeprefix("."),
+                        "size": st.st_size, "mtime": st.st_mtime,
+                        "note": note.read_text(errors="replace").strip() if note.is_file() else ""})
+    out.sort(key=lambda v: -v["mtime"])
+    return {"root": str(VIDEO_ROOT), "videos": out}
+
+
+@app.get("/videos/file/{name:path}")
+async def video_file(name: str, request: Request):
+    _tailnet_only(request, "the video gallery")
+    path = (VIDEO_ROOT / name).resolve()
+    if not path.is_relative_to(VIDEO_ROOT.resolve()) or not path.is_file() or path.suffix.lower() not in VIDEO_EXT:
+        raise HTTPException(404)
+    return FileResponse(path)  # Starlette answers Range requests, so the player can seek
+
+
+@app.get("/videos")
+async def videos_redirect():
+    return Response(status_code=308, headers={"Location": "videos/"})
+
+
+@app.get("/videos/")
+async def videos_page():
+    return FileResponse(HERE / "static" / "videos.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/pf_ui.js")
