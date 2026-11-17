@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import tarfile
+from shutil import rmtree
 from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
@@ -92,6 +93,11 @@ def run_reconstruction(
         minio_access_key=settings.minio_access_key,
         minio_secret_key=settings.minio_secret_key,
     )
+
+    # Start from an empty work folder: files of the previous job (its capture, intermediate artifacts) would
+    # otherwise remain and be read as this job's (a leftover reuse.json made a build reuse another map's features).
+    rmtree(WORK_DIR, ignore_errors=True)
+    CAPTURE_SESSION_DIRECTORY.mkdir(parents=True)
 
     publisher.set_phase(ReconstructionStatus.DOWNLOADING)
     print(
