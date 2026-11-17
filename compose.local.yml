@@ -82,6 +82,9 @@ services:
       - ./docker/reconstructor/src/reconstructor/run_reconstruction.py:/opt/uv/venv/lib/python3.13/site-packages/reconstructor/run_reconstruction.py:ro
       - ./docker/reconstructor/src/reconstructor/checkpoints.py:/opt/uv/venv/lib/python3.13/site-packages/reconstructor/checkpoints.py:ro
       - ./docker/reconstructor/src/reconstructor/progress_publisher.py:/opt/uv/venv/lib/python3.13/site-packages/reconstructor/progress_publisher.py:ro
+      # core: progress output limited to every 5% (encoding, LightGlue matching).
+      - ./packages/python/core/src/core/opq.py:/opt/uv/venv/lib/python3.13/site-packages/core/opq.py:ro
+      - ./packages/python/core/src/core/lightglue.py:/opt/uv/venv/lib/python3.13/site-packages/core/lightglue.py:ro
   localizer-cuda:
     logging: *bounded-logs
     extra_hosts: ["${PUBLIC_DOMAIN:?err}:172.17.0.1"]
