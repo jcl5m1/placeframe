@@ -60,6 +60,7 @@ from upload_to_placeframe import saved_credentials  # noqa: E402
 import gps_placement  # noqa: E402
 
 from .project_pages import router as project_router  # noqa: E402
+from . import rentals  # noqa: E402
 from .telemetry import Telemetry  # noqa: E402
 
 CREDS = saved_credentials(REPO.parent / "placeframe")
@@ -689,6 +690,12 @@ async def status(who: str = Depends(user)):
     snap = dict(TELEMETRY.get())
     snap["hold"] = _held()
     return snap
+
+
+# Rented GPUs (Vast.ai): running instances with their cost, account credit, and the fleet broker's recent rentals.
+@app.get("/api/rentals")
+async def rentals_status(who: str = Depends(user)):
+    return await asyncio.to_thread(rentals.snapshot)
 
 
 COST_REPORT = Path.home() / "pf_cost" / "report"

@@ -23,6 +23,9 @@
   .item { border-top:1px solid var(--line); padding:12px 0; } .item:first-child { border-top:0; }
   .item .top, #alerts > .top { display:flex; justify-content:space-between; gap:10px; align-items:baseline; }
   .item .acts { display:flex; gap:6px; flex:none; }
+  table.rent { width:100%; border-collapse:collapse; font-size:13px; margin-top:10px; }
+  table.rent th { text-align:left; color:var(--muted); font-weight:500; font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:4px 6px; border-bottom:1px solid var(--line); }
+  table.rent td { padding:5px 6px; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; }
   .name { font-weight:600; word-break:break-all; } .meta { color:var(--muted); font-size:12px; }
   .bar { height:8px; background:#0f1218; border-radius:5px; overflow:hidden; margin:8px 0 4px; }
   .bar > div { height:100%; background:var(--accent); width:0; transition:width .3s; }
@@ -123,6 +126,14 @@
     <div id="tasks"><div class="meta">Loading…</div></div>
   </section>
 
+  <section id="rentBox" class="hidden">
+    <h2 class="ph">Rented GPUs <span class="meta" id="rentAge" style="text-transform:none;letter-spacing:0;font-weight:400"></span></h2>
+    <div class="tiles" id="rentTiles"></div>
+    <div id="rentRunning"></div>
+    <h2 style="margin-top:16px">Recent rentals (fleet broker)</h2>
+    <div id="rentRecent"><div class="meta">Loading…</div></div>
+  </section>
+
   <section id="jobsBox" class="hidden">
     <h2 class="ph">Processing</h2>
     <div id="jobs"><div class="meta">No jobs yet.</div></div>
@@ -141,12 +152,12 @@ async function api(path, opts = {}) {
   return r;
 }
 function showLogin(msg) {
-  $('loginBox').classList.remove('hidden'); $('uploadBox').classList.add('hidden'); $('jobsBox').classList.add('hidden'); $('computeBox').classList.add('hidden');
+  $('loginBox').classList.remove('hidden'); $('uploadBox').classList.add('hidden'); $('jobsBox').classList.add('hidden'); $('computeBox').classList.add('hidden'); $('rentBox').classList.add('hidden');
   $('loginMsg').textContent = msg || '';
 }
 async function afterLogin() {
-  $('loginBox').classList.add('hidden'); $('uploadBox').classList.remove('hidden'); $('jobsBox').classList.remove('hidden'); $('computeBox').classList.remove('hidden');
-  pollStatus();
+  $('loginBox').classList.add('hidden'); $('uploadBox').classList.remove('hidden'); $('jobsBox').classList.remove('hidden'); $('computeBox').classList.remove('hidden'); $('rentBox').classList.remove('hidden');
+  pollStatus(); pollRentals();
   await loadMaps();
   pollJobs();
 }
@@ -470,6 +481,41 @@ function jobHtml(j) {
 // ---------------------------------------------------------------- compute dashboard
 let statusTimer = null;
 let lastStatusOk = 0;
+// Rented GPUs: live Vast.ai instances (any on the account) with cost so far, credit left, and the broker's history.
+let rentTimer = null;
+const usd = v => v == null ? '—' : '$' + Number(v).toFixed(2);
+const ago = t => t ? dur(Date.now() / 1000 - t) : '—';
+async function pollRentals() {
+  clearTimeout(rentTimer);
+  try {
+    const r = await api('rentals');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    renderRentals(await r.json());
+  } catch (e) { $('rentAge').innerHTML = `<span class="warn">· unavailable (${esc(String(e))})</span>`; }
+  if (token) rentTimer = setTimeout(pollRentals, 30000);
+}
+function renderRentals(d) {
+  const a = d.account || {}, run = d.running || [], t = d.totals || {};
+  $('rentAge').innerHTML = d.error ? `<span class="warn">· Vast.ai not reachable (${esc(d.error)}); showing the broker's records</span>`
+                                   : '· updated ' + new Date(d.t * 1000).toLocaleTimeString();
+  $('rentTiles').innerHTML =
+    tile('Running now', String(run.length), run.length ? `${usd(d.burn_per_hour)}/h` : 'nothing rented', '', false) +
+    tile('Cost so far (running)', usd(run.reduce((s, r) => s + (r.cost || 0), 0)), 'at their current prices') +
+    tile('Fleet spend, 24 h', usd(t.day), `7 days ${usd(t.week)} · estimated from the broker`) +
+    tile('Vast.ai total spend', usd(a.total_spend), 'as billed') +
+    tile('Credit left', usd(a.credit), a.credit != null && a.credit < 5 ? 'top up soon' : '', '', a.credit != null && a.credit < 5);
+  $('rentRunning').innerHTML = !run.length ? '' : `<table class="rent"><tr><th>Instance</th><th>GPU</th><th>Where</th><th>Status</th><th>Price</th><th>Running</th><th>Cost so far</th><th>Label</th></tr>`
+    + run.map(r => `<tr><td>${esc(r.id)}</td><td>${esc(r.gpu)}</td><td>${esc(r.where || '')}</td><td>${esc(r.status || '')}</td>
+        <td>${usd(r.dph)}/h</td><td>${ago(r.since)}</td><td>${usd(r.cost)}</td><td class="meta">${esc(r.label)}</td></tr>`).join('') + '</table>';
+  const rec = d.recent || [];
+  $('rentRecent').innerHTML = !rec.length ? '<div class="meta">No rentals recorded.</div>'
+    : `<table class="rent"><tr><th>Started</th><th>Job</th><th>GPU</th><th>Where</th><th>Bid</th><th>Ran</th><th>Est. cost</th><th>Outcome</th></tr>`
+      + rec.map(r => `<tr><td>${r.launched ? new Date(r.launched * 1000).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : '—'}</td>
+          <td>${esc(r.job)}</td><td>${esc(r.gpu || '')}</td><td>${esc(r.where || '')}</td><td>${usd(r.bid)}/h</td>
+          <td>${r.ended ? dur(r.hours * 3600) : 'running'}</td><td>${usd(r.cost)}</td><td class="meta">${esc(r.job_status || '')}</td></tr>`).join('')
+      + `</table><div class="meta" style="margin-top:6px">${t.instances} instances in the broker's records, ${usd(t.all)} estimated in total (bid × running time + download charges).</div>`;
+}
+
 async function pollStatus() {
   clearTimeout(statusTimer);
   try {
@@ -488,7 +534,7 @@ async function pollStatus() {
   statusTimer = setTimeout(pollStatus, 4000);
 }
 // Browsers pause timers in background tabs and sleeping laptops: refresh as soon as the tab is visible again.
-document.addEventListener('visibilitychange', () => { if (!document.hidden && token) { pollStatus(); pollJobs(); } });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && token) { pollStatus(); pollJobs(); pollRentals(); } });
 function spark(hist, key, max = 100) {
   const pts = hist.map(h => h[key]).filter(v => v != null);
   if (pts.length < 2) return '';
