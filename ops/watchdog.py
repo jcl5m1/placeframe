@@ -150,7 +150,7 @@ class Watchdog:
 
     # ----------------------------------------------------------------------- checks
     def run(self) -> None:
-        for check in (self.services, self.containers, self.server_builds, self.merge_jobs, self.study,
+        for check in (self.storage, self.services, self.containers, self.server_builds, self.merge_jobs, self.study,
                       self.disk, self.memory, self.cleanup_published, self.backups, self.logs):
             try:
                 check()
@@ -184,6 +184,13 @@ class Watchdog:
                         HOME / "pf_x5/viewer",
                         STATE_DIR / "viewer.log")
 
+    def storage(self) -> None:
+        # The HDD holds backups and archives only; nothing real-time may depend on it. Report when it is offline
+        # (backups, archive moves and old-job cleanup then skip) rather than letting dependent steps fail.
+        if not os.path.ismount("/mnt/hdd12t"):
+            self.incident("storage-offline", "/mnt/hdd12t (backups and archives) is not mounted; real-time services "
+                          "are unaffected, backups and archiving are paused", "", fixed=False, target="hdd12t")
+
     def containers(self) -> None:
         rc, out = docker("ps -a --filter name=placeframe- --format '{{.Names}}\t{{.State}}\t{{.Status}}'")
         bad = [l for l in out.splitlines() if l and not any(s in l.split("\t")[0] for s in ONE_SHOT)
@@ -195,9 +202,17 @@ class Watchdog:
             ev = "\n".join(bad)
             for name in [l.split("\t")[0] for l in bad]:
                 ev += f"\n--- {name} ---\n" + docker(f"logs --tail 40 {name}")[1]
-            ok = self.act("bring the Placeframe stack back up", f"cd {PLACEFRAME} && sg docker -c 'uv run up --quiet-pull'", 900)
-            self.incident("container-down", f"{len(bad)} Placeframe container(s) not running; ran `uv run up`", ev,
-                          fixed=ok, target=",".join(l.split('\t')[0] for l in bad))
+            # Restart the stopped containers as they are (same image, same mounts). `uv run up` recreates them with
+            # image tags computed from the source tree, which don't exist while local changes are mounted over the
+            # published images, so it is only the last resort for a container that is gone.
+            names = [l.split("\t")[0] for l in bad]
+            ok = all(self.act(f"start {n}", f"sg docker -c 'docker start {n}'", 120) for n in names)
+            how = "restarted with `docker start`"
+            if not ok:
+                ok = self.act("bring the Placeframe stack back up", f"cd {PLACEFRAME} && sg docker -c 'uv run up --quiet-pull'", 900)
+                how = "`docker start` failed; ran `uv run up`"
+            self.incident("container-down", f"{len(bad)} Placeframe container(s) not running; {how}", ev,
+                          fixed=ok, target=",".join(names))
 
     def server_builds(self) -> None:
         recs = self.api.get("/reconstructions")
@@ -392,6 +407,8 @@ class Watchdog:
                           top, target="memory")
 
     def cleanup_published(self) -> None:
+        if not os.path.ismount("/mnt/hdd12t"):  # reported by storage(); nothing to do until it is back
+            return
         """A merge job's large intermediates (frames, odometry runs, views, capture tars) are only needed to resume
         it. Once its map has been published for CLEANUP_AFTER_H, delete them (keeping the job's logs and small
         records) and move its raw recording to the HDD (symlinked, so reprocessing still works)."""
@@ -440,6 +457,8 @@ class Watchdog:
                           fixed=True, target="cleanup")
 
     def backups(self) -> None:
+        if not os.path.ismount("/mnt/hdd12t"):  # reported by storage(); nothing to do until it is back
+            return
         """The nightly backup (ops/backup.py, 03:30) must have succeeded within the last 36 h."""
         last = Path("/mnt/hdd12t/backups/placeframe/last_backup.json")
         if not last.exists():

@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -24,6 +26,11 @@ WORKER_ENV = Path.home() / "pf_fleet" / "local-worker.env"  # holds the MinIO cr
 MC_IMAGE = "cgr.dev/chainguard/minio-client@sha256:e1f3f37e8b13f34be49494f441ca01ff7be4e05d7cf04bf26681b0fe380852e1"
 PG_IMAGE = "postgis/postgis:16-3.4-alpine"
 TABLES = ("capture_sessions", "reconstructions", "localization_maps")
+# Localization recordings are written to the SSD (the API must not depend on the HDD); every day is archived to the
+# HDD here, and days older than KEEP_RECORDING_DAYS leave the SSD once their archive copy is complete.
+RECORDINGS = Path.home() / "pf_data" / "localization_recordings"
+RECORDINGS_ARCHIVE = Path("/mnt/hdd12t/placeframe_scratch/localization_recordings")
+KEEP_RECORDING_DAYS = 14
 
 
 def main() -> None:
@@ -33,6 +40,9 @@ def main() -> None:
     if a.verify:
         verify()
         return
+    if not os.path.ismount("/mnt/hdd12t"):
+        raise SystemExit("/mnt/hdd12t is not mounted: nothing backed up or archived tonight")
+    archived = archive_recordings()
     t0 = time.time()
     (DEST / "postgres").mkdir(parents=True, exist_ok=True)
     (DEST / "minio").mkdir(parents=True, exist_ok=True)
@@ -57,11 +67,28 @@ def main() -> None:
     record = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "seconds": round(time.time() - t0),
               "postgres_dump": dump.name, "postgres_bytes": dump.stat().st_size,
               "minio_bytes": int(sh(f"du -sb {DEST / 'minio'}").split()[0]), "minio_ok": mirror[0] == 0,
-              "minio_errors": mirror[1][-2000:] if mirror[0] else "", "live_rows": row_counts("placeframe-postgres-1")}
+              "minio_errors": mirror[1][-2000:] if mirror[0] else "", "live_rows": row_counts("placeframe-postgres-1"),
+              "recordings_archived": archived}
     (DEST / "last_backup.json").write_text(json.dumps(record, indent=1))
     print(json.dumps({k: v for k, v in record.items() if k != "minio_errors"}))
     if mirror[0]:
         raise SystemExit(f"MinIO mirror failed: {mirror[1][-500:]}")
+
+
+def archive_recordings() -> dict:
+    """Copy every recorded day to the HDD; remove days older than KEEP_RECORDING_DAYS from the SSD once their
+    archive copy has every file."""
+    RECORDINGS_ARCHIVE.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["rsync", "-a", f"{RECORDINGS}/", f"{RECORDINGS_ARCHIVE}/"], check=True)
+    cutoff = time.strftime("%Y-%m-%d", time.localtime(time.time() - KEEP_RECORDING_DAYS * 86400))
+    removed = []
+    for day in sorted(d for d in RECORDINGS.iterdir() if d.is_dir() and d.name < cutoff):
+        here = {f.name for f in day.iterdir()}
+        there = {f.name for f in (RECORDINGS_ARCHIVE / day.name).iterdir()} if (RECORDINGS_ARCHIVE / day.name).is_dir() else set()
+        if here <= there:
+            shutil.rmtree(day)
+            removed.append(day.name)
+    return {"days_on_ssd": sorted(d.name for d in RECORDINGS.iterdir() if d.is_dir()), "removed_from_ssd": removed}
 
 
 def verify() -> None:

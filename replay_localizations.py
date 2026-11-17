@@ -2,7 +2,8 @@
 """Replay recorded phone /localize requests against the Placeframe server.
 
 The API records every client localization (image + camera intrinsics + map ids + response + latency) to
-/mnt/hdd12t/placeframe_scratch/localization_recordings/<date>/ (LOCALIZATION_RECORD_DIR in compose.local.yml).
+~/pf_data/localization_recordings/<date>/ (LOCALIZATION_RECORD_DIR in compose.local.yml; SSD), older days archived to
+/mnt/hdd12t/placeframe_scratch/localization_recordings/ by ops/backup.py.
 
   summary   metrics of what the clients actually experienced (success rate, latency, confidence) per session
   replay    re-send each request once and compare to the recording -> regression report (exit 1 on regression)
@@ -34,7 +35,8 @@ from scipy.spatial.transform import Rotation
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from add_recording_to_map import PlaceframeApi  # noqa: E402
 
-ROOT = Path("/mnt/hdd12t/placeframe_scratch/localization_recordings")
+ROOT = Path.home() / "pf_data" / "localization_recordings"  # live recordings (SSD)
+ARCHIVE = Path("/mnt/hdd12t/placeframe_scratch/localization_recordings")  # older days (HDD, may be offline)
 
 
 def main() -> None:
@@ -77,7 +79,10 @@ def main() -> None:
 
 def load_requests(root: Path, dates: list[str] | None, client: str | None) -> list[dict]:
     out = []
-    for day in sorted(root.glob("*/requests.jsonl")):
+    days = {d.parent.name: d for d in root.glob("*/requests.jsonl")}
+    if root == ROOT and ARCHIVE.is_dir():  # archived days not kept on the SSD (skipped when the HDD is offline)
+        days = {d.parent.name: d for d in ARCHIVE.glob("*/requests.jsonl")} | days
+    for day in (days[k] for k in sorted(days)):
         if dates and day.parent.name not in dates:
             continue
         for line in day.read_text().splitlines():

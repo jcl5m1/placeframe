@@ -4,7 +4,7 @@ Reference: the phone's odometry is locally accurate, so within a short window ev
 the same odometry-from-map alignment. For each frame, the alignment supported by the most frames in a ±W-frame
 window (RANSAC over all candidates) is the reference; candidates and the tracker are scored against it.
 
-  python bench/track_analyze.py /mnt/hdd12t/placeframe_scratch/track_replay/<session>
+  python bench/track_analyze.py ~/pf_data/track_replay/<session>
 """
 import json
 import sys
