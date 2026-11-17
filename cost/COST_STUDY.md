@@ -60,11 +60,21 @@ capture; seconds per image as in the joined and merged maps):
 | Preprocessing (CPU) | ~50 min |
 | Stored: map (~1.15 GB) + capture kept for rebuilds (~2 GB) | ~3.2 GB |
 
-**Memory limit (found after the study).** The reconstructor holds every image's descriptors in RAM at full
-precision (~1.3 MB per image) and the matcher moves all of them to the GPU at once: the 9,072-image map peaked at
-18 GB of RAM. A ~19,700-image venue in one build would need ~26 GB, more than this machine (30 GB RAM, 24 GB GPU)
-can give it. Keeping descriptors in half precision and moving only each batch's pairs to the GPU (~13 GB) would fit;
-until then, build such a venue as two or more joined maps of up to ~10,000 images.
+**Memory (found after the study, fixed).** The reconstructor held every image's descriptors in RAM at full
+precision (~1.3 MB per image), made a second full-precision copy of all of them to train the compression, and the
+matcher moved all of them to the GPU at once: the 9,072-image map peaked at 18 GB of RAM, so a ~19,700-image venue
+would not fit this machine (30 GB RAM, 24 GB GPU). Now descriptors are kept in half precision, the matcher moves
+only each batch's images to the GPU, and the compression is trained on a 1M-descriptor sample:
+
+| 9,072-image map | Full precision | Half precision |
+|---|---|---|
+| Peak reconstructor RAM | 18 GB | 11.9 GiB |
+| Peak GPU memory | — (all descriptors) | 4.9 GB |
+| Registered images | 8,508 / 8,532 (two builds) | 8,556 |
+| Reprojection error, median | 0.69 px | 0.68 px |
+
+Matches are identical in half and full precision (307,078 on a test batch). Scaled linearly, the venue would peak
+at ≤26 GiB (part of the peak is fixed, so likely less); not yet measured at that size.
 
 ## 2. Rented, right-sized GPU
 
@@ -134,6 +144,8 @@ app downloads a ~1 MB point cloud per session; query images go straight to the G
    the GPU is still ~25% idle, so the API and CPU-side work are the next limit.
 4. **Reuse base features and matches in merges** (done: -18% on a merge with half its images already mapped).
 5. **Rent for parallel builds, not single venue builds.**
+6. **Keep descriptors in half precision** (done: build RAM 18 → 11.9 GiB with the same map quality), so a venue
+   fits one 32 GB machine.
 
 ## Assumptions and caveats
 
