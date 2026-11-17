@@ -4,39 +4,26 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Placeframe · report</title>
-<link rel="stylesheet" href="/placeframe/vendor/recogito-text-4.3.7.css">
+<link rel="stylesheet" href="/placeframe/vendor/pindrop-0.1.30.css">
 <style>
-  :root { --bg:#0f1115; --panel:#171a21; --ink:#e7e9ee; --muted:#9aa1ad; --line:#272c36; --accent:#4cc2ff; --hl:rgba(255,214,90,.35); }
+  :root { --bg:#0f1115; --panel:#171a21; --ink:#e7e9ee; --muted:#9aa1ad; --line:#272c36; --accent:#4cc2ff; }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
-  .wrap { max-width:1280px; margin:0 auto; padding:16px 16px 60px; }
-  .top { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; margin-bottom:14px; }
+  .wrap { max-width:1040px; margin:0 auto; padding:16px 16px 80px; }
+  .top { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; margin-bottom:10px; }
   .top h1 { font-size:24px; margin:0 0 4px; }
   .when { color:var(--muted); font-size:13px; }
   .share { background:#0f1218; color:var(--accent); border:1px solid var(--line); border-radius:6px; padding:6px 12px; font:inherit; font-size:13px; cursor:pointer; }
-  .layout { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:24px; }
-  @media (max-width:900px) { .layout { grid-template-columns:1fr; } }
+  .hint { color:var(--muted); font-size:13px; margin:0 0 12px; }
+  .hint kbd { background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:0 5px; font-size:12px; }
+  .hint button { background:none; border:none; color:var(--accent); font:inherit; padding:0; cursor:pointer; }
   article { background:#fbfaf7; color:#1b1c1f; border-radius:10px; padding:28px 34px; min-width:0; }
   article h1, article h2, article h3 { line-height:1.25; } article h2 { margin-top:1.6em; border-bottom:1px solid #e3e1da; padding-bottom:4px; }
   article table { border-collapse:collapse; margin:12px 0; font-size:14px; display:block; overflow-x:auto; }
   article th, article td { border:1px solid #d9d6cc; padding:5px 9px; text-align:left; vertical-align:top; }
   article th { background:#f0eee7; } article img { max-width:100%; } article code { background:#efede6; padding:1px 4px; border-radius:4px; font-size:13px; }
   article a { color:#1f64b5; }
-  aside { position:sticky; top:12px; align-self:start; max-height:calc(100vh - 24px); overflow:auto; }
-  .hint { color:var(--muted); font-size:13px; margin:0 0 10px; }
-  .thread { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin-bottom:10px; font-size:13px; }
-  .thread.on { border-color:var(--accent); }
-  .quote { color:#ffd65a; border-left:3px solid #ffd65a; padding-left:8px; margin-bottom:6px; cursor:pointer; white-space:pre-wrap; }
-  .sec { color:var(--muted); font-size:12px; margin-bottom:4px; }
-  .c { margin:6px 0; } .c b { color:var(--ink); } .c .t { color:var(--muted); font-size:11px; margin-left:6px; }
-  .c p { margin:2px 0 0; white-space:pre-wrap; }
-  textarea, input { width:100%; background:#0f1218; color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:6px 8px; font:inherit; font-size:13px; }
-  textarea { min-height:64px; resize:vertical; margin-top:6px; }
-  .row { display:flex; gap:6px; margin-top:6px; } .row button { flex:none; }
-  button.p { background:var(--accent); color:#06121b; border:none; border-radius:6px; padding:6px 12px; font:inherit; font-size:13px; cursor:pointer; }
-  button.s { background:none; color:var(--muted); border:1px solid var(--line); border-radius:6px; padding:6px 10px; font:inherit; font-size:13px; cursor:pointer; }
-  .composer { background:var(--panel); border:1px solid var(--accent); border-radius:8px; padding:10px 12px; margin-bottom:12px; font-size:13px; }
-  .err { color:#ff6b6b; font-size:12px; margin-top:4px; }
+  .toast { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:#3a1d1d; color:#ffd2d2; border:1px solid #6b2b2b; border-radius:8px; padding:8px 14px; font-size:13px; display:none; z-index:2147483647; }
 </style>
 </head>
 <body>
@@ -46,24 +33,43 @@
     <div><h1 id="title">Loading…</h1><div class="when" id="when"></div></div>
     <button class="share" id="share" type="button">Copy link</button>
   </div>
-  <div class="layout">
-    <article id="doc"></article>
-    <aside>
-      <p class="hint">Select any text in the report to comment on it. No sign-in needed: your name is optional.</p>
-      <div id="composer"></div>
-      <div id="threads"></div>
-    </aside>
-  </div>
+  <p class="hint">Comment anywhere: press <kbd>C</kbd> (or the comment button at the bottom) and click a spot in the
+    report; <kbd>V</kbd> to go back to reading. Click a pin to open its thread. You can edit or delete your own
+    comments. <span id="me"></span></p>
+  <article id="doc"></article>
 </div>
+<div class="toast" id="toast"></div>
 <script src="/placeframe/pf_ui.js"></script>
-<script src="/placeframe/vendor/recogito-text-4.3.7.min.js"></script>
+<script src="/placeframe/vendor/pindrop-0.1.30.umd.js"></script>
 <script>
 const $ = id => document.getElementById(id);
-const esc = s => PfUI.esc(String(s ?? ''));
 const when = s => s ? new Date(s).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '';
 const link = location.origin + location.pathname;
 const doc = $('doc');
-let anno, threads = [], current = null;
+// Shared by every report on this site: the name (Pindrop's "<key>-user") and the participant key that proves
+// which comments are yours.
+const KEY = 'pf-reports';
+const NAME_KEY = KEY + '-user';
+let layer, saving = 0;
+
+if (!crypto.randomUUID) {  // only in secure contexts; plain-http tailnet addresses need it too
+  crypto.randomUUID = () => {
+    const b = crypto.getRandomValues(new Uint8Array(16));
+    b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128;
+    const h = [...b].map(x => x.toString(16).padStart(2, '0')).join('');
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+  };
+}
+
+function participant() {
+  let p = localStorage.getItem(KEY + '-participant');
+  if (!p) {
+    p = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(24)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+    localStorage.setItem(KEY + '-participant', p);
+  }
+  return p;
+}
+const name = () => localStorage.getItem(NAME_KEY) || '';
 
 $('share').addEventListener('click', () => {
   const b = $('share');
@@ -72,104 +78,120 @@ $('share').addEventListener('click', () => {
   else prompt('Link to this report:', link);
 });
 
+function toast(text) {
+  const t = $('toast');
+  t.textContent = text; t.style.display = 'block';
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.style.display = 'none', 5000);
+}
+
 fetch('data.json').then(r => r.ok ? r.json() : Promise.reject(r.status)).then(d => {
   document.title = 'Placeframe · ' + d.title;
   PfUI.header($('hdr'), 'reports', { title: d.title });
   $('title').textContent = d.title;
   $('when').textContent = `Published ${when(d.created)}` + (d.updated !== d.created ? ` · Updated ${when(d.updated)}` : '');
   doc.innerHTML = d.html;
-  startAnnotator();
-  loadThreads();
-}).catch(e => { $('title').textContent = 'Report not found'; });
+  startComments();
+}).catch(() => { $('title').textContent = 'Report not found'; });
 
-function startAnnotator() {
-  const { createTextAnnotator, W3CTextFormat } = window.RecogitoText;
-  anno = createTextAnnotator(doc, {
-    adapter: W3CTextFormat(link, doc),
-    style: { fill: '#ffd65a', fillOpacity: 0.35 },
+function startComments() {
+  if (!name() && localStorage.getItem('pf_comment_author')) localStorage.setItem(NAME_KEY, localStorage.getItem('pf_comment_author'));
+  layer = window.Pindrop.Pindrop.init({
+    storageKey: KEY,
+    theme: 'dark',
+    user: name() ? { name: name() } : undefined,
+    adapter: {
+      load: () => fetch('comments', { cache: 'no-store' }).then(r => r.ok ? r.json() : []),
+      save: list => save(list),
+    },
   });
-  anno.on('createAnnotation', a => openComposer(a));
-  anno.on('clickAnnotation', a => focusThread(a.id, true));
-}
-
-function loadThreads() {
-  return fetch('comments').then(r => r.json()).then(d => {
-    threads = d.threads;
-    anno.setAnnotations(threads.map(t => t.target));
-    renderThreads();
-  });
-}
-
-// The heading of the section a selection starts in, so a comment also says where in the report it is.
-function sectionOf(a) {
-  const pos = selectors(a).find(s => s.type === 'TextPositionSelector');
-  let section = '';
-  if (!pos) return section;
-  const walker = document.createTreeWalker(doc, NodeFilter.SHOW_TEXT);
-  let offset = 0, node;
-  while ((node = walker.nextNode())) {
-    if (offset + node.length > pos.start) break;
-    offset += node.length;
-  }
-  for (const h of doc.querySelectorAll('h1,h2,h3,h4')) {
-    if (node && (h.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING)) section = h.textContent.trim();
-  }
-  return section;
-}
-
-// W3C annotations may have one target or a list of them; the selectors of the first are used.
-const selectors = a => [].concat((Array.isArray(a.target) ? a.target[0] : a.target)?.selector || []);
-const quoteOf = a => (selectors(a).find(s => s.type === 'TextQuoteSelector') || {}).exact || '';
-const author = () => localStorage.getItem('pf_comment_author') || '';
-
-function openComposer(a) {
-  $('composer').innerHTML = `<div class="composer"><div class="quote">${esc(quoteOf(a))}</div>
-    <input id="cAuthor" placeholder="Your name (optional)" value="${esc(author())}">
-    <textarea id="cBody" placeholder="Comment…"></textarea>
-    <div class="row"><button class="p" id="cSend" type="button">Comment</button><button class="s" id="cCancel" type="button">Cancel</button></div>
-    <div class="err" id="cErr"></div></div>`;
-  $('cBody').focus();
-  $('cCancel').onclick = () => { anno.removeAnnotation(a.id); $('composer').innerHTML = ''; };
-  $('cSend').onclick = () => {
-    const body = $('cBody').value.trim();
-    if (!body) return;
-    localStorage.setItem('pf_comment_author', $('cAuthor').value.trim());
-    post({ body, author: $('cAuthor').value.trim(), target: a, section: sectionOf(a) }).then(() => {
-      $('composer').innerHTML = '';
-      loadThreads().then(() => focusThread(a.id, false));
-    }).catch(e => { $('cErr').textContent = e; });
+  // Pindrop hides pins while browsing ("view" mode); here everyone's pins stay visible while reading (its hide
+  // button still collapses them all).
+  const setMode = layer.setMode.bind(layer);
+  layer.setMode = mode => { setMode(mode); if (mode === 'view') layer.container.pinContainer.style.display = ''; };
+  layer.setMode('view');
+  // Pindrop offers "Delete" on every thread; only its author may delete one (the server enforces it too).
+  const deleteComment = layer.handleDeleteComment.bind(layer);
+  layer.handleDeleteComment = id => {
+    const c = layer.getComments().find(x => x.id === id);
+    if (c && c.author !== name()) { toast(`Only ${c.author} can delete this thread; you can resolve it.`); return; }
+    deleteComment(id);
   };
+  for (const img of doc.querySelectorAll('img')) img.addEventListener('load', () => layer.refresh());
+  new MutationObserver(stampThread).observe(layer.container.shadowContent, { childList: true, subtree: true });
+  showName();
+  if (!name()) askName();
+  setInterval(poll, 20000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
 }
 
-function post(payload) {
-  return fetch('comments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-    .then(r => r.ok ? r.json() : r.json().then(j => Promise.reject(j.detail || r.status), () => Promise.reject(r.status)));
+// First visit to any report: ask for the name shown with comments (also asked again on the first comment if skipped).
+async function askName() {
+  const n = layer.namePrompt ? await layer.namePrompt.prompt(KEY) : (prompt('Your name, shown with your comments:') || '').trim();
+  if (n) { localStorage.setItem(NAME_KEY, n); layer.setUser({ name: n }); }
+  showName();
 }
 
-function renderThreads() {
-  const pos = t => (selectors(t.target).find(s => s.type === 'TextPositionSelector') || { start: 0 }).start;
-  const sorted = [...threads].sort((a, b) => pos(a) - pos(b));
-  $('threads').innerHTML = sorted.length ? sorted.map(t => `<div class="thread${t.thread === current ? ' on' : ''}" id="t-${esc(t.thread)}">
-      ${t.section ? `<div class="sec">${esc(t.section)}</div>` : ''}
-      <div class="quote" data-go="${esc(t.thread)}">${esc(t.quote.exact)}</div>
-      ${t.comments.map(c => `<div class="c"><b>${esc(c.author)}</b><span class="t">${esc(when(c.created))}</span><p>${esc(c.body)}</p></div>`).join('')}
-      <div class="row"><input placeholder="Reply…" data-reply="${esc(t.thread)}"><button class="s" type="button" data-send="${esc(t.thread)}">Reply</button></div>
-    </div>`).join('') : '<p class="hint">No comments yet.</p>';
-  $('threads').querySelectorAll('[data-go]').forEach(q => q.onclick = () => focusThread(q.dataset.go, true));
-  $('threads').querySelectorAll('[data-send]').forEach(b => b.onclick = () => {
-    const input = $('threads').querySelector(`[data-reply="${CSS.escape(b.dataset.send)}"]`);
-    const body = input.value.trim();
-    if (!body) return;
-    post({ body, author: author(), parent: b.dataset.send }).then(() => loadThreads().then(() => focusThread(b.dataset.send, false)));
+async function changeName() {
+  const old = name();
+  if (layer.handleChangeName) await layer.handleChangeName();
+  else { const n = (prompt('Your name:', old) || '').trim(); if (n) { localStorage.setItem(NAME_KEY, n); layer.setUser({ name: n }); } }
+  showName();
+  if (name() && name() !== old) save(layer.getComments());  // the server renames your comments
+}
+
+function showName() {
+  $('me').innerHTML = name() ? 'Commenting as <b></b> · <button type="button">change name</button>'
+                             : '<button type="button">Set your name</button>';
+  if (name()) $('me').querySelector('b').textContent = name();
+  $('me').querySelector('button').onclick = name() ? changeName : askName;
+}
+
+// Sends the whole list; the server keeps what this participant may change and returns the stored list.
+function save(list) {
+  saving++;
+  const comments = list.map(c => c.context ? c : { ...c, context: contextOf(c.anchor) });
+  return fetch('comments', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ participant: participant(), name: name(), comments }),
+  }).then(r => r.ok ? r.json() : r.json().then(j => Promise.reject(j.detail || r.status), () => Promise.reject(r.status)))
+    .then(stored => layer.setComments(stored))
+    .catch(e => { toast(`Comment not saved: ${e}`); return poll(true); })
+    .finally(() => saving--);
+}
+
+// The open thread shows when each comment was written (and edited), not only "2h ago": its rows are the comment and
+// then its replies, in order.
+function stampThread() {
+  const pop = layer.container.shadowContent;
+  const id = layer.popover?.currentCommentId || layer.sheet?.currentCommentId;
+  const c = id && layer.getComments().find(x => x.id === id);
+  if (!c) return;
+  const items = [c, ...c.replies];
+  pop.querySelectorAll('.pindrop-popover-row').forEach((row, i) => {
+    const t = row.querySelector('.pindrop-time'), item = items[i];
+    if (!t || !item) return;
+    const text = when(item.createdAt) + (item.editedAt ? ` · edited ${when(item.editedAt)}` : '');
+    if (t.textContent !== text) { t.textContent = text; t.title = text; }
   });
 }
 
-function focusThread(id, scrollDoc) {
-  current = id;
-  renderThreads();
-  const el = document.getElementById('t-' + id);
-  if (el) el.scrollIntoView({ block: 'nearest' });
-  if (scrollDoc) anno.scrollIntoView(id);
+// Where a pin is, in words, for whoever reviews the comments: the section heading and the text of the element.
+function contextOf(anchor) {
+  let el = null;
+  try { el = anchor && document.querySelector(anchor.selector); } catch (e) { /* not a valid selector */ }
+  if (!el || !doc.contains(el)) return { section: '', text: '' };
+  let section = '';
+  for (const h of doc.querySelectorAll('h1,h2,h3,h4')) {
+    if (h === el || (h.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING)) section = h.textContent.trim();
+  }
+  return { section, text: el.textContent.replace(/\s+/g, ' ').trim().slice(0, 300) };
+}
+
+// Others' comments: refresh while nobody is writing one here.
+function poll(force) {
+  const writing = layer.newCommentEl || document.activeElement?.id === 'pindrop-web-root';
+  if (!force && (saving || writing || document.hidden)) return;
+  return fetch('comments', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(list => { if (list) layer.setComments(list); });
 }
 </script>
 </body>

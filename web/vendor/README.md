@@ -1,7 +1,6 @@
 # Vendored browser libraries
 
-- `recogito-text-4.3.7.min.js`, `recogito-text-4.3.7.css`: [@recogito/text-annotator](https://github.com/recogito/text-annotator-js)
-  4.3.7 (BSD-3-Clause, `RECOGITO-LICENSE`), bundled with its dependencies into one IIFE (`window.RecogitoText`
-  exposing `createTextAnnotator` and `W3CTextFormat`) with esbuild 0.24.0:
-  `export { createTextAnnotator, W3CTextFormat } from '@recogito/text-annotator'` →
-  `esbuild entry.js --bundle --format=iife --global-name=RecogitoText --minify`.
+- `pindrop-0.1.30.umd.js`, `pindrop-0.1.30.css`: [pindrop.js](https://github.com/huangdun/pindrop.js) 0.1.30
+  (MIT, `PINDROP-LICENSE`), the npm package's `dist/pindrop.umd.js` and `dist/style.css` unchanged
+  (`window.Pindrop.Pindrop.init`). Comment pins anywhere on a page; used by the report page with a storage adapter
+  that saves to the project server.

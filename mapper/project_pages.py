@@ -5,24 +5,33 @@
   /vendor/...           vendored browser libraries (public)
   /reports/             list of reports (tailnet only)
   /reports/<id>/        one report, by its unguessable id (anyone with the link)
-  /reports/<id>/comments            GET threads, POST a comment or reply (anyone with the link; no login)
-  /reports/<id>/comments.json       every comment with what it refers to, for review tools and agents
+  /reports/<id>/comments            GET the comments; PUT the page's comment list (anyone with the link; no login)
+  /reports/<id>/comments.json       every comment with where it is in the report, for review tools and agents
 
 Reports are published with ops/publish_report.py into ~/pf_data/reports/<id>/ (report.md and its images; SSD).
-Comments are anchored to the text a reader selected (W3C Web Annotation: TextQuoteSelector with prefix/suffix and
-TextPositionSelector) plus the heading of the section, and appended to <id>/comments.jsonl.
+
+Comments are pins at any point of the report (pindrop.js in the page): each is anchored to the element under the pin
+(a CSS selector and the position within it, as fractions of its size) and carries the section heading and the
+element's text, so a reader of comments.json knows what it refers to. Threads have replies; comments are edited,
+deleted and resolved in place. There are no accounts: each browser keeps a random participant key, and only the key
+that wrote a comment may edit, move or delete it (anyone may resolve or reopen a thread). The page sends its whole
+comment list on every change; the server applies only the changes that participant may make, keeps ids, timestamps
+and names itself, and returns the stored list. State: <id>/comments-state.json.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import secrets
 import threading
 import time
 from collections import defaultdict, deque
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import markdown
 from fastapi import APIRouter, HTTPException, Request
@@ -34,9 +43,13 @@ VIEWER_DIR = Path(os.environ.get("MAPPER_VIEWER_DIR", Path.home() / "pf_x5" / "v
 REPORTS = Path(os.environ.get("MAPPER_REPORTS", Path.home() / "pf_data" / "reports"))
 REGISTRY = REPORTS / "registry.json"
 REPORT_ID = re.compile(r"^[A-Za-z0-9_-]{20,64}$")
+ITEM_ID = re.compile(r"^[A-Za-z0-9-]{8,64}$")
+PARTICIPANT = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
+STATE = "comments-state.json"
 # Anyone with a report's link may comment: keep it bounded.
-MAX_BODY, MAX_AUTHOR, MAX_TARGET = 4000, 60, 16_000
-RATE_WINDOW_S, RATE_MAX = 600, 30
+MAX_BODY, MAX_AUTHOR, MAX_SELECTOR = 4000, 60, 1000
+MAX_COMMENTS, MAX_REPLIES = 500, 200
+RATE_WINDOW_S, RATE_MAX = 600, 60  # changes (new, edited, moved, deleted, resolved) per participant address
 _SALT = secrets.token_hex(16)  # IPs are kept only as salted hashes (for abuse handling), new salt per process
 _recent: dict[str, deque] = defaultdict(deque)
 _lock = threading.Lock()
@@ -124,49 +137,40 @@ async def report_data(rid: str):
 @router.get("/reports/{rid}/comments")
 async def comments(rid: str):
     _report(rid)
-    return {"threads": _threads(rid)}
+    return JSONResponse([_public(c) for c in load_comments(rid)], headers={"Cache-Control": "no-cache"})
 
 
-@router.post("/reports/{rid}/comments")
-async def add_comment(rid: str, body: dict, request: Request):
+@router.put("/reports/{rid}/comments")
+async def save_comments(rid: str, body: dict, request: Request):
     _report(rid)
-    ip = (request.headers.get("x-forwarded-for") or (request.client.host if request.client else "")).split(",")[0].strip()
-    ip_hash = hashlib.sha256((_SALT + ip).encode()).hexdigest()[:16]
-    now = time.time()
+    participant = str(body.get("participant") or "")
+    if not PARTICIPANT.match(participant):
+        raise HTTPException(400, "a participant key is required")
+    incoming = body.get("comments")
+    if not isinstance(incoming, list) or len(incoming) > MAX_COMMENTS:
+        raise HTTPException(400, f"comments must be a list of at most {MAX_COMMENTS}")
+    who = _Who(owner=hashlib.sha256(participant.encode()).hexdigest()[:32],
+               name=_clip(body.get("name"), MAX_AUTHOR) or "anonymous", ip_hash=_ip_hash(request), now=_now())
     with _lock:
-        q = _recent[ip_hash]
-        while q and now - q[0] > RATE_WINDOW_S:
-            q.popleft()
-        if len(q) >= RATE_MAX:
-            raise HTTPException(429, "too many comments; try again in a few minutes")
-        q.append(now)
-    text = str(body.get("body") or "").strip()
-    author = str(body.get("author") or "").strip()[:MAX_AUTHOR] or "anonymous"
-    if not text or len(text) > MAX_BODY:
-        raise HTTPException(400, f"a comment needs 1-{MAX_BODY} characters")
-    parent = body.get("parent")
-    rec = {"type": "comment", "id": secrets.token_urlsafe(9), "created": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-           "author": author, "body": text, "ip_hash": ip_hash}
-    if parent:  # a reply to an existing thread
-        if not any(t["thread"] == parent for t in _threads(rid)):
-            raise HTTPException(404, "no such thread")
-        rec["thread"] = parent
-    else:  # a new thread on the selected text
-        target = body.get("target")
-        if not isinstance(target, dict) or len(json.dumps(target)) > MAX_TARGET:
-            raise HTTPException(400, "a new comment needs the selected text (target)")
-        rec["thread"] = str(target.get("id") or rec["id"])[-64:]
-        rec["target"] = target
-        rec["section"] = str(body.get("section") or "")[:200]
-    with _lock, (REPORTS / rid / "comments.jsonl").open("a") as f:
-        f.write(json.dumps(rec) + "\n")
-    return _public(rec)
+        merged, changes = merge_comments(load_comments(rid), incoming, who)
+        if changes:
+            q = _recent[who.ip_hash]
+            while q and time.time() - q[0] > RATE_WINDOW_S:
+                q.popleft()
+            if len(q) + changes > RATE_MAX:
+                raise HTTPException(429, "too many changes; try again in a few minutes")
+            q.extend([time.time()] * changes)
+            tmp = REPORTS / rid / (STATE + ".tmp")
+            tmp.write_text(json.dumps({"comments": merged}, indent=1))
+            tmp.replace(REPORTS / rid / STATE)
+    return [_public(c) for c in merged]
 
 
 @router.get("/reports/{rid}/comments.json")
 async def comments_export(rid: str):
     meta = _report(rid)
-    return {"report": {"id": rid, **{k: v for k, v in meta.items() if k != "source"}}, "threads": _threads(rid)}
+    return {"report": {"id": rid, **{k: v for k, v in meta.items() if k != "source"}},
+            "comments": [export_comment(c) for c in load_comments(rid)]}
 
 
 @router.get("/reports/{rid}/{name:path}")
@@ -174,9 +178,105 @@ async def report_asset(rid: str, name: str):
     _report(rid)
     base = (REPORTS / rid).resolve()
     path = (base / name).resolve()
-    if not path.is_relative_to(base) or not path.is_file() or path.name in ("comments.jsonl", "report.md"):
+    if not path.is_relative_to(base) or not path.is_file() or path.name.startswith("comments") or path.name == "report.md":
         raise HTTPException(404)
     return FileResponse(path, headers={"Cache-Control": "no-cache"})
+
+
+class _Who:
+    def __init__(self, owner: str, name: str, ip_hash: str, now: str) -> None:
+        self.owner, self.name, self.ip_hash, self.now = owner, name, ip_hash, now
+
+
+# The stored list with the changes this participant may make from the list their page sent, and how many changes.
+# Each item goes to the page with "base", its stored values, which the page keeps as they are: a field changed on
+# the page differs from its base, so a page holding an older copy changes only what it changed itself.
+def merge_comments(stored: list[dict], incoming: list[Any], who: _Who) -> tuple[list[dict], int]:
+    sent = {str(c.get("id")): c for c in incoming if isinstance(c, dict) and ITEM_ID.match(str(c.get("id", "")))}
+    out: list[dict] = []
+    changes = 0
+    for old in stored:
+        new = sent.pop(old["id"], None)
+        mine = old["owner"] == who.owner
+        if new is None:
+            if mine:
+                changes += 1  # deleted by its author (with its replies)
+            else:
+                out.append(old)
+            continue
+        c = dict(old)
+        base = _base(new, old)
+        text, anchor, resolved = _clip(new.get("text"), MAX_BODY), _anchor(new.get("anchor")), bool(new.get("resolved"))
+        if mine and text and text != base["text"] and text != c["text"]:
+            c["text"], c["editedAt"] = text, who.now
+        if mine and anchor and anchor != base["anchor"] and anchor != c["anchor"]:
+            c["anchor"] = anchor
+        if resolved != bool(base["resolved"]) and resolved != c["resolved"]:
+            c["resolved"], c["resolvedBy"], c["resolvedAt"] = resolved, who.name if resolved else None, who.now if resolved else None
+        c["replies"], n = _merge_replies(old["replies"], new.get("replies"), who)
+        if c != old or n:
+            c["updatedAt"] = who.now
+            changes += 1
+        out.append(c)
+    for new in sent.values():  # new comments
+        text, anchor = _clip(new.get("text"), MAX_BODY), _anchor(new.get("anchor"))
+        if not text or not anchor or len(out) >= MAX_COMMENTS:
+            continue
+        replies, _ = _merge_replies([], new.get("replies"), who)
+        out.append({"id": str(new["id"]), "anchor": anchor, "context": _context(new.get("context")), "author": who.name,
+                    "text": text, "createdAt": who.now, "updatedAt": who.now, "editedAt": None, "resolved": False,
+                    "resolvedBy": None, "resolvedAt": None, "replies": replies, "owner": who.owner, "ip_hash": who.ip_hash})
+        changes += 1
+    renamed = False  # a participant who changes their name keeps their comments (and can still edit them)
+    for item in out + [r for c in out for r in c["replies"]]:
+        if item["owner"] == who.owner and item["author"] != who.name:
+            item["author"], renamed = who.name, True
+    return out, changes + renamed
+
+
+def _merge_replies(stored: list[dict], incoming: Any, who: _Who) -> tuple[list[dict], int]:
+    sent = {str(r.get("id")): r for r in (incoming if isinstance(incoming, list) else [])
+            if isinstance(r, dict) and ITEM_ID.match(str(r.get("id", "")))}
+    out: list[dict] = []
+    changes = 0
+    for old in stored:
+        new = sent.pop(old["id"], None)
+        mine = old["owner"] == who.owner
+        if new is None and mine:
+            changes += 1
+            continue
+        r = dict(old)
+        text = _clip(new.get("text"), MAX_BODY) if new else ""
+        if new and mine and text and text != _base(new, old)["text"] and text != r["text"]:
+            r["text"], r["editedAt"], r["updatedAt"] = text, who.now, who.now
+            changes += 1
+        out.append(r)
+    for new in sent.values():
+        text = _clip(new.get("text"), MAX_BODY)
+        if text and len(out) < MAX_REPLIES:
+            out.append({"id": str(new["id"]), "author": who.name, "text": text, "createdAt": who.now,
+                        "updatedAt": who.now, "editedAt": None, "owner": who.owner, "ip_hash": who.ip_hash})
+            changes += 1
+    return out, changes
+
+
+def load_comments(rid: str) -> list[dict]:
+    try:
+        return json.loads((REPORTS / rid / STATE).read_text())["comments"]
+    except (FileNotFoundError, ValueError, KeyError):
+        return []
+
+
+# A comment for review tools: what it says, who wrote it when, and where it is in the report.
+def export_comment(c: dict) -> dict:
+    ctx = c.get("context") or {}
+    return {"id": c["id"], "author": c["author"], "text": c["text"], "created": c["createdAt"], "edited": c.get("editedAt"),
+            "resolved": c["resolved"], "resolved_by": c.get("resolvedBy"),
+            "location": {"section": ctx.get("section", ""), "element_text": ctx.get("text", ""),
+                         "element": c["anchor"]["selector"],
+                         "position_in_element": [round(c["anchor"]["offsetX"], 3), round(c["anchor"]["offsetY"], 3)]},
+            "replies": [{"id": r["id"], "author": r["author"], "text": r["text"], "created": r["createdAt"],
+                         "edited": r.get("editedAt")} for r in c["replies"]]}
 
 
 def _registry() -> dict:
@@ -199,41 +299,51 @@ def _report(rid: str) -> dict:
     return meta
 
 
-def _threads(rid: str) -> list[dict]:
-    path = REPORTS / rid / "comments.jsonl"
-    if not path.exists():
-        return []
-    threads: dict[str, dict] = {}
-    for line in path.read_text().splitlines():
-        try:
-            r = json.loads(line)
-        except ValueError:
-            continue
-        if r.get("type") != "comment":
-            continue
-        t = threads.get(r["thread"])
-        if t is None and "target" in r:
-            t = threads[r["thread"]] = {"thread": r["thread"], "target": r["target"], "section": r.get("section", ""),
-                                        "quote": _quote(r["target"]), "comments": []}
-        if t is not None:
-            t["comments"].append(_public(r))
-    return list(threads.values())
-
-
 def _comment_count(rid: str) -> int:
-    return sum(len(t["comments"]) for t in _threads(rid))
+    return sum(1 + len(c["replies"]) for c in load_comments(rid))
 
 
-def _public(rec: dict) -> dict:
-    return {k: rec[k] for k in ("id", "thread", "created", "author", "body") if k in rec}
+# What the page sees: no owner keys or address hashes; "base" holds the stored values (see merge_comments).
+def _public(c: dict) -> dict:
+    out = {k: v for k, v in c.items() if k not in ("owner", "ip_hash")}
+    out["base"] = {"text": c["text"], "anchor": c["anchor"], "resolved": c["resolved"]}
+    out["replies"] = [{**{k: v for k, v in r.items() if k not in ("owner", "ip_hash")}, "base": {"text": r["text"]}}
+                      for r in c["replies"]]
+    return out
 
 
-def _quote(target: dict) -> dict:
-    """The quoted text of a W3C annotation (TextQuoteSelector), with its context."""
-    targets = target.get("target") or []
-    for t in targets if isinstance(targets, list) else [targets]:  # W3C: one target or a list of them
-        sel = t.get("selector") or [] if isinstance(t, dict) else []
-        for s in sel if isinstance(sel, list) else [sel]:
-            if isinstance(s, dict) and s.get("type") == "TextQuoteSelector":
-                return {"exact": s.get("exact", ""), "prefix": s.get("prefix", ""), "suffix": s.get("suffix", "")}
-    return {"exact": "", "prefix": "", "suffix": ""}
+# The values the page started from: its "base", or the stored ones from a page that sent none.
+def _base(new: dict, old: dict) -> dict:
+    base = new.get("base")
+    base = base if isinstance(base, dict) else {}
+    return {k: base.get(k, old.get(k)) for k in ("text", "anchor", "resolved")}
+
+
+def _anchor(a: Any) -> dict | None:
+    if not isinstance(a, dict) or not isinstance(a.get("selector"), str) or not 0 < len(a["selector"]) <= MAX_SELECTOR:
+        return None
+    out: dict[str, Any] = {"selector": a["selector"]}
+    for k in ("offsetX", "offsetY", "viewportX", "viewportY"):
+        v = a.get(k)
+        if not isinstance(v, (int, float)) or isinstance(v, bool) or not math.isfinite(v) or abs(v) > 1e6:
+            return None
+        out[k] = float(v)
+    return out
+
+
+def _context(ctx: Any) -> dict:
+    ctx = ctx if isinstance(ctx, dict) else {}
+    return {"section": _clip(ctx.get("section"), 200), "text": _clip(ctx.get("text"), 300)}
+
+
+def _clip(value: Any, limit: int) -> str:
+    return value.strip()[:limit] if isinstance(value, str) else ""
+
+
+def _ip_hash(request: Request) -> str:
+    ip = (request.headers.get("x-forwarded-for") or (request.client.host if request.client else "")).split(",")[0].strip()
+    return hashlib.sha256((_SALT + ip).encode()).hexdigest()[:16]
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")

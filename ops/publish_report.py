@@ -2,7 +2,7 @@
 """Publish (or re-publish) a Markdown report at a permanent link: /placeframe/reports/<id>/.
 
 The id is random and unguessable (33 characters, like a Google Drive link): anyone with the link can read the
-report and comment on any part of it without signing in; nobody can find it without the link. Re-publishing the
+report and pin comments anywhere on it without signing in; nobody can find it without the link. Re-publishing the
 same source keeps its id (and its comments) and updates its "updated" time.
 
   python ops/publish_report.py cost/COST_STUDY.md [--title "..."]      # prints the link
@@ -68,35 +68,29 @@ def main() -> None:
 
 
 def comments_markdown(rid: str, reg: dict) -> str:
-    """Every comment thread with the text it refers to (and its section), for a person or an agent to review."""
+    """Every comment thread with where it is in the report (section, the text under the pin), for review."""
     meta = reg.get(rid)
     if not meta:
         raise SystemExit(f"no report {rid}")
     lines = [f"# Comments on: {meta['title']}", f"Report: {BASE_URL}/{rid}/ (source: {meta['source']})", ""]
-    threads: dict[str, dict] = {}
-    path = REPORTS / rid / "comments.jsonl"
-    for line in path.read_text().splitlines() if path.exists() else []:
-        r = json.loads(line)
-        if "target" in r:
-            targets = r["target"].get("target") or []
-            targets = targets if isinstance(targets, list) else [targets]  # W3C: one target or a list
-            sel = [s for t in targets if isinstance(t, dict) for s in ([t.get("selector")] if isinstance(t.get("selector"), dict) else t.get("selector") or [])]
-            quote = next((s for s in sel if isinstance(s, dict) and s.get("type") == "TextQuoteSelector"), {})
-            threads[r["thread"]] = {"section": r.get("section", ""), "quote": quote, "comments": []}
-        if r["thread"] in threads:
-            threads[r["thread"]]["comments"].append(r)
-    for n, t in enumerate(threads.values(), 1):
-        q = t["quote"]
-        lines += [f"## Thread {n}" + (f" — section: {t['section']}" if t["section"] else ""),
-                  f"> …{q.get('prefix', '')}**{q.get('exact', '')}**{q.get('suffix', '')}…", ""]
-        lines += [f"- **{c['author']}** ({c['created']}): {c['body']}" for c in t["comments"]] + [""]
+    path = REPORTS / rid / "comments-state.json"
+    threads = json.loads(path.read_text())["comments"] if path.exists() else []
+    for n, c in enumerate(threads, 1):
+        ctx = c.get("context") or {}
+        status = " (resolved)" if c.get("resolved") else ""
+        lines += [f"## Thread {n}{status}" + (f" — section: {ctx['section']}" if ctx.get("section") else ""),
+                  f"> {ctx.get('text') or '(no text under the pin)'}", ""]
+        for r in [c, *c["replies"]]:
+            edited = f", edited {r['editedAt']}" if r.get("editedAt") else ""
+            lines.append(f"- **{r['author']}** ({r['createdAt']}{edited}): {r['text']}")
+        lines.append("")
     if not threads:
         lines.append("No comments yet.")
     return "\n".join(lines)
 
 
 def _first_heading(text: str) -> str | None:
-    m = re.search(r"^#\s+(.+)$", text, re.M)
+    m = re.search(r"^#\s+(.+)$", text, re.MULTILINE)
     return m.group(1).strip() if m else None
 
 
