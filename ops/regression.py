@@ -45,7 +45,9 @@ def main() -> None:
     a = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
     api = PlaceframeApi()
-    results = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "suites": {"phone_walk": phone_walk(api)}}
+    # A build sharing the GPU slows localization: latency is then not comparable (accuracy still is).
+    busy = [r["id"] for r in api.get("/reconstructions") if r["status"] not in ("succeeded", "failed", "cancelled")]
+    results = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "builds_running": busy, "suites": {"phone_walk": phone_walk(api)}}
     for name, s in SUITES.items():
         rows = [json.loads(line) for line in (s["data"] / "queries.jsonl").read_text().splitlines()]
         cam = json.loads((s["data"] / "conversion.json").read_text())["camera"]
@@ -102,6 +104,8 @@ def compare(base: dict, cur: dict) -> list[str]:
         c = cur["suites"].get(suite, {})
         for metric, tol in TOLERANCE.items():
             if b.get(metric) is None or c.get(metric) is None:
+                continue
+            if metric == "latency_ms_p50" and (cur.get("builds_running") or base.get("builds_running")):
                 continue
             if metric == "median_dt_m" and c[metric] > b[metric] + tol:
                 worse.append(f"{suite}: median error {b[metric]} -> {c[metric]} m")
