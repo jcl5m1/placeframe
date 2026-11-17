@@ -1,0 +1,124 @@
+{
+  "host": {
+    "cpu": "AMD Ryzen 9 5900XT 16-Core Processor",
+    "cpus_available": 32,
+    "gpu": "NVIDIA GeForce RTX 3090"
+  },
+  "frames_per_session": 50,
+  "track_workers_per_process": 2,
+  "runs": [
+    {
+      "threads": "default",
+      "throughput": [
+        {
+          "processes": 1,
+          "sessions": 1,
+          "queries": 50,
+          "qps": 4.4,
+          "p50_ms": 215.6,
+          "p95_ms": 301.9,
+          "gpu_util_mean": 36.0,
+          "gpu_mem_max_MiB": 2275.0,
+          "cpu_busy_mean_pct": 34.4
+        },
+        {
+          "processes": 1,
+          "sessions": 4,
+          "queries": 200,
+          "qps": 6.1,
+          "p50_ms": 624.1,
+          "p95_ms": 910.8,
+          "gpu_util_mean": 54.0,
+          "gpu_mem_max_MiB": 3227.0,
+          "cpu_busy_mean_pct": 37.8
+        },
+        {
+          "processes": 2,
+          "sessions": 8,
+          "queries": 400,
+          "qps": 7.35,
+          "p50_ms": 1032.5,
+          "p95_ms": 1492.2,
+          "gpu_util_mean": 62.4,
+          "gpu_mem_max_MiB": 5534.0,
+          "cpu_busy_mean_pct": 42.4
+        }
+      ],
+      "profile": {
+        "frames": 50,
+        "mean_ms": 221.7,
+        "p50_ms": 208.0,
+        "stages_ms": {
+          "matching (LightGlue, GPU)": 70.3,
+          "pose RANSAC + refine (CPU)": 44.7,
+          "descriptor decode, PQ (CPU)": 30.2,
+          "global descriptors (GPU)": 23.4,
+          "release cached GPU memory": 12.4,
+          "local features (ALIKED, GPU)": 10.7,
+          "decode + resize (CPU)": 8.6,
+          "localization metrics (CPU)": 1.8,
+          "tracker update (CPU)": 1.6,
+          "query tiles (CPU)": 0.2,
+          "other (retrieval, transfers, 2D-3D correspondence loop)": 17.8
+        }
+      }
+    },
+    {
+      "threads": 4,
+      "throughput": [
+        {
+          "processes": 1,
+          "sessions": 1,
+          "queries": 50,
+          "qps": 3.7,
+          "p50_ms": 265.5,
+          "p95_ms": 403.2,
+          "gpu_util_mean": 31.7,
+          "gpu_mem_max_MiB": 2269.0,
+          "cpu_busy_mean_pct": 33.4
+        },
+        {
+          "processes": 1,
+          "sessions": 4,
+          "queries": 200,
+          "qps": 5.92,
+          "p50_ms": 635.6,
+          "p95_ms": 896.2,
+          "gpu_util_mean": 48.8,
+          "gpu_mem_max_MiB": 3233.0,
+          "cpu_busy_mean_pct": 38.8
+        },
+        {
+          "processes": 2,
+          "sessions": 8,
+          "queries": 400,
+          "qps": 7.18,
+          "p50_ms": 1066.8,
+          "p95_ms": 1509.9,
+          "gpu_util_mean": 62.2,
+          "gpu_mem_max_MiB": 12048.0,
+          "cpu_busy_mean_pct": 42.2
+        }
+      ],
+      "profile": {
+        "frames": 50,
+        "mean_ms": 213.8,
+        "p50_ms": 199.2,
+        "stages_ms": {
+          "matching (LightGlue, GPU)": 71.1,
+          "pose RANSAC + refine (CPU)": 46.9,
+          "global descriptors (GPU)": 23.5,
+          "descriptor decode, PQ (CPU)": 17.5,
+          "release cached GPU memory": 12.8,
+          "decode + resize (CPU)": 10.6,
+          "local features (ALIKED, GPU)": 10.3,
+          "localization metrics (CPU)": 0.8,
+          "tracker update (CPU)": 0.6,
+          "query tiles (CPU)": 0.2,
+          "other (retrieval, transfers, 2D-3D correspondence loop)": 19.5
+        }
+      }
+    }
+  ],
+  "done": true
+}

@@ -115,6 +115,27 @@ routed by id): 4.9 q/s with one client (p50 193 ms), 8.0 q/s with four (p50 428 
 one process topped out at 7.9 q/s with the GPU a third idle. We plan with 8 q/s per GPU (latency under 0.5 s),
 autoscaled every 5 minutes with 30% headroom.
 
+**What limits a GPU: the CPU, not the API.** We ran the localizer's tracked path in-process (no API, no HTTP;
+`bench/localizer_profile.py`) on two rented RTX 3090s with the same map and walk (data in `cost/serving_profile/`):
+
+| | Rented, Ryzen 9 5900XT | Rented, EPYC 7532 (2.4 GHz) | Home, i7-11700K, through the API |
+|---|---|---|---|
+| One request, median | 208 ms | 496 ms | 193 ms |
+| 1 session | 4.4 q/s, GPU 36% busy | 2.0 q/s, GPU 13% | 4.9 q/s, GPU 34% |
+| 2 processes, 8 sessions | 7.4 q/s, GPU 62% | 3.5 q/s, GPU 25% | 9.6 q/s, GPU 75% |
+
+One request on the Ryzen host, by stage: matching 70 ms, pose RANSAC and refinement 45 ms, descriptor decoding (PQ)
+17–30 ms, global descriptors 23 ms, release of cached GPU memory 12 ms, local features 11 ms, image decoding 9 ms,
+other Python work 18 ms. About 115 ms of the 208 ms is CPU work, and each process does it for one request at a
+time, so the GPU waits. On the slow CPU even the GPU stages are slower (global descriptors 121 ms instead of 23 ms):
+the CPU cannot give the GPU work fast enough. The API adds little: the home results through the API are as fast as
+the in-process results on a similar CPU. A cap of 4 CPU threads per process made no difference, so the cause is
+the CPU work per request, not threads that compete.
+
+So: **rent GPUs with a fast CPU (≥4 GHz per core)**; a slow-CPU host gives less than half the throughput from the
+same GPU. The next gains are in the CPU work (keep cached GPU memory between requests, decode only the descriptors
+that matching needs, more localizer processes per GPU), not in the GPU or the API.
+
 ![cost](3_serving_cost.png)
 
 | Query policy | Queries per day | Peak q/s | Peak GPUs | GPU-hours/day | Vast RTX 3090 ($0.15/h) | GCP L4 ($0.71/h) | AWS A10G ($1.01/h) |
@@ -140,8 +161,9 @@ app downloads a ~1 MB point cloud per session; query images go straight to the G
 1. **Query adaptively** (done in our client): the largest single factor in serving cost.
 2. **Keep the map next to the GPUs, or on R2.** Marketplace GPUs plus R2, or cloud GPUs plus the same cloud's store;
    avoid paying egress for every scale-up. Keeping a few GPUs warm through sessions also cuts map loads.
-3. **Pack more per GPU:** two localizer processes per GPU (sessions routed by id) raised throughput ~20% (done);
-   the GPU is still ~25% idle, so the API and CPU-side work are the next limit.
+3. **Pack more per GPU:** two localizer processes per GPU (sessions routed by id) raised throughput ~20% (done).
+   The GPU is still ~25% idle because each request needs ~115 ms of CPU work (measured; the API adds little).
+   Rent GPUs with a fast CPU, and cut the CPU work per request next.
 4. **Reuse base features and matches in merges** (done: -18% on a merge with half its images already mapped).
 5. **Rent for parallel builds, not single venue builds.**
 6. **Keep descriptors in half precision** (done: build RAM 18 → 11.9 GiB with the same map quality), so a venue
@@ -152,6 +174,8 @@ app downloads a ~1 MB point cloud per session; query images go straight to the G
 - One venue model; attendee behaviour (active fractions, ramps, sessions per attendee) is assumed, not measured.
 - Localization throughput was measured on one map (8,370 images) with one recorded walk; larger maps retrieve over
   more images (linear, small) and match the same number of pairs.
+- The in-process serving profile ran on rented hosts (Ryzen 9 5900XT, EPYC 7532), not at home: the home GPU stopped
+  working (it fell off the PCIe bus) before the profile. Cost of both runs: ~$0.14.
 - Prices: Vast.ai interruptible from live offers on 2026-11-17; cloud on-demand list prices; storage and egress from
   provider price pages (R2: no egress fees).
 - The x4 build ran while a recording was preprocessed at low priority on the same machine; its extraction time may
