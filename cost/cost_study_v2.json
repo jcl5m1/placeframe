@@ -1,0 +1,214 @@
+{
+ "builds": [
+  {
+   "variant": "f100",
+   "images": 2268,
+   "v2_total_s": 1018.2,
+   "v2_mapping_s": 616.6,
+   "v1_total_s": 5754.1,
+   "v1_mapping_s": 5387.6,
+   "v1_variant": "f100",
+   "registered": 1866,
+   "points": 87153,
+   "storage": "143MiB",
+   "stages": {
+    "queued": 5.0,
+    "extracting_features": 166.0,
+    "training_opq_matrix": 5.0,
+    "training_product_quantizer": 5.0,
+    "matching_features": 185.39999999999998,
+    "verifying_geometry": 35.200000000000045,
+    "reconstructing": 616.6
+   },
+   "occupied_m2": 216.5
+  },
+  {
+   "variant": "f25",
+   "images": 564,
+   "v2_total_s": 215.8,
+   "v2_mapping_s": 110.30000000000001,
+   "v1_total_s": 220.8,
+   "v1_mapping_s": 120.4,
+   "v1_variant": "f25",
+   "registered": 462,
+   "points": 26141,
+   "storage": "36MiB",
+   "stages": {
+    "queued": 5.1,
+    "extracting_features": 45.199999999999996,
+    "training_product_quantizer": 5.100000000000001,
+    "matching_features": 45.1,
+    "verifying_geometry": 5.0,
+    "reconstructing": 110.30000000000001
+   },
+   "occupied_m2": 144.0
+  },
+  {
+   "variant": "f50",
+   "images": 1134,
+   "v2_total_s": 436.5,
+   "v2_mapping_s": 235.6,
+   "v1_total_s": 1572.2,
+   "v1_mapping_s": 1376.4,
+   "v1_variant": "f50",
+   "registered": 762,
+   "points": 39506,
+   "storage": "66MiB",
+   "stages": {
+    "queued": 5.0,
+    "extracting_features": 80.6,
+    "training_opq_matrix": 5.0,
+    "training_product_quantizer": 5.0,
+    "matching_features": 90.20000000000002,
+    "verifying_geometry": 15.099999999999994,
+    "reconstructing": 235.6
+   },
+   "occupied_m2": 166.5
+  },
+  {
+   "variant": "j2",
+   "images": 4536,
+   "v2_total_s": 1024.1,
+   "v2_mapping_s": 235.79999999999995,
+   "v1_total_s": 2830.5,
+   "v1_mapping_s": 2107.5,
+   "v1_variant": "x2",
+   "registered": 4254,
+   "points": 72999,
+   "storage": "281MiB",
+   "stages": {
+    "queued": 5.0,
+    "downloading": 5.1,
+    "extracting_features": 316.79999999999995,
+    "training_opq_matrix": 5.0,
+    "training_product_quantizer": 10.0,
+    "matching_features": 375.9,
+    "verifying_geometry": 70.5,
+    "reconstructing": 235.79999999999995
+   },
+   "occupied_m2": 657.5
+  },
+  {
+   "variant": "j4",
+   "images": 9072,
+   "v2_total_s": 2194.300000000001,
+   "v2_mapping_s": 476.7000000000007,
+   "v1_total_s": 6480.3,
+   "v1_mapping_s": 5034.5,
+   "v1_variant": "x4",
+   "registered": 8508,
+   "points": 141376,
+   "storage": "561MiB",
+   "stages": {
+    "downloading": 5.0,
+    "extracting_features": 734.5,
+    "training_opq_matrix": 10.100000000000364,
+    "training_product_quantizer": 30.100000000000364,
+    "matching_features": 782.1000000000004,
+    "verifying_geometry": 155.79999999999927,
+    "reconstructing": 476.7000000000007
+   },
+   "occupied_m2": 1332.0
+  }
+ ],
+ "fairhills": {
+  "variant": "Fairhills (3 recordings, merged)",
+  "images": 8370,
+  "total_s": 2075.0,
+  "mapper": "prior poses"
+ },
+ "venue_build": {
+  "recording_min": 27.77777777777778,
+  "images": 19661.898569570872,
+  "build_h_3090": 1.3210398304676596,
+  "s_per_image": 0.24187610229276907
+ },
+ "vast": null,
+ "serving": {
+  "inputs": {
+   "attendees": 3000,
+   "area_m2": 10000,
+   "day_h": 8,
+   "gpu_qps": 7.0,
+   "venue_images": 19662.0,
+   "policies_qps_per_user": {
+    "fixed 2 Hz": 2.0,
+    "fixed 1 Hz": 1.0,
+    "adaptive (measured)": 0.19
+   }
+  },
+  "policies": {
+   "fixed 2 Hz": {
+    "queries_per_day": 32064000.0,
+    "peak_qps": 4619.166666666665,
+    "mean_qps": 1113.3333333333333,
+    "peak_gpus": 858,
+    "gpu_hours": 2030.0,
+    "instance_starts": 6465,
+    "gpu_cost": {
+     "Vast.ai RTX 3090 interruptible": 304.5,
+     "Vast.ai RTX 4090 interruptible": 609.0,
+     "GCP L4 on-demand (g2-standard-4)": 1441.3,
+     "AWS A10G on-demand (g5.xlarge)": 2050.3
+    }
+   },
+   "fixed 1 Hz": {
+    "queries_per_day": 16152000.0,
+    "peak_qps": 2369.166666666665,
+    "mean_qps": 560.8333333333334,
+    "peak_gpus": 440,
+    "gpu_hours": 1026.0,
+    "instance_starts": 3317,
+    "gpu_cost": {
+     "Vast.ai RTX 3090 interruptible": 153.9,
+     "Vast.ai RTX 4090 interruptible": 307.8,
+     "GCP L4 on-demand (g2-standard-4)": 728.4599999999999,
+     "AWS A10G on-demand (g5.xlarge)": 1036.26
+    }
+   },
+   "adaptive (measured)": {
+    "queries_per_day": 3263280.0,
+    "peak_qps": 546.6666666666652,
+    "mean_qps": 113.30833333333334,
+    "peak_gpus": 102,
+    "gpu_hours": 210.66666666666666,
+    "instance_starts": 774,
+    "gpu_cost": {
+     "Vast.ai RTX 3090 interruptible": 31.599999999999998,
+     "Vast.ai RTX 4090 interruptible": 63.199999999999996,
+     "GCP L4 on-demand (g2-standard-4)": 149.57333333333332,
+     "AWS A10G on-demand (g5.xlarge)": 212.7733333333333
+    }
+   }
+  },
+  "data": {
+   "map_GB": 1.1493174563172042,
+   "stored_GB": 3.184641675067204,
+   "map_loads_GB_per_day": 889.571711189516,
+   "pointcloud_GB_per_day": 8.7890625,
+   "query_upload_GB_per_day": 140.04478454589844
+  },
+  "storage": {
+   "Cloudflare R2": {
+    "storage_per_month": 0.04776962512600806,
+    "egress_per_day_gpus_on_marketplace": 0.0,
+    "egress_per_day_gpus_in_same_cloud": 0.0
+   },
+   "AWS S3 Standard": {
+    "storage_per_month": 0.07324675852654569,
+    "egress_per_day_gpus_on_marketplace": 80.85246963205644,
+    "egress_per_day_gpus_in_same_cloud": 0.791015625
+   },
+   "GCS Standard": {
+    "storage_per_month": 0.06369283350134408,
+    "egress_per_day_gpus_on_marketplace": 107.80329284274191,
+    "egress_per_day_gpus_in_same_cloud": 1.0546875
+   },
+   "Azure Blob Hot": {
+    "storage_per_month": 0.057323550151209664,
+    "egress_per_day_gpus_on_marketplace": 78.15738731098789,
+    "egress_per_day_gpus_in_same_cloud": 0.7646484375
+   }
+  }
+ }
+}
