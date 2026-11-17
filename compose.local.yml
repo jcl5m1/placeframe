@@ -64,6 +64,9 @@ services:
     environment:
       # The home worker is not preempted: skip stage checkpoint uploads (rented fleet workers keep them on).
       RECONSTRUCTOR_CHECKPOINTS: "0"
+      # Keep each build's features and matches so a later merge into the map reuses them (only the new recording's
+      # images are extracted and only new pairs matched).
+      RECONSTRUCTOR_KEEP_FEATURES: "1"
     extra_hosts: ["${PUBLIC_DOMAIN:?err}:172.17.0.1"]
     # Local patches (upstream-PR candidates), mounted over the installed package — no image rebuild:
     #  pairs.py  — panoramic rigs (e.g. 360 cameras split into pinhole views): pair frames by proximity
