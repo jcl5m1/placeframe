@@ -29,7 +29,6 @@ class TopDownModel {
 
   static const sliceHalfHeight = 1.0;
   static const _minStep = 0.05;
-  static const _jumpMetres = 1.0; // an alignment this far from the previous one is a different place, not a refinement
   // Odometry moving faster than anyone walks re-anchored itself (ARCore corrects its world frame after relocalizing):
   // the path is not connected across it.
   static const _odometryJumpMetres = 1.0, _odometryJumpSpeed = 3.0;
@@ -56,21 +55,12 @@ class TopDownModel {
 
   // A confident localization's map alignment (odometry-from-map) at [time]. Returns true when the display frame
   // was (re)set, so the map points need cutting again.
+  // The display frame is set once, at the first fix, and never changes: the map keeps its orientation. When the
+  // alignment changes (drift corrected, or a different place), the path before it is re-placed with the new
+  // alignment (each point uses the first alignment at or after its time), so it snaps back onto the map.
   bool addAlignment(double time, Pose odomFromMap, List<double> at) {
-    var reset = displayFromMap == null;
-    if (!reset) {
-      final here = Pose(Pose.identity.q, at);
-      final previous = _displayFromOdom.last * here, next = displayFromMap! * odomFromMap.inverse() * here;
-      reset = previous.distanceTo(next) > _jumpMetres;
-    }
-    if (reset) {
-      // First fix, or the most probable place changed: start over in a frame fixed to the (new) map placement.
-      displayFromMap = odomFromMap;
-      _alignmentTimes.clear();
-      _displayFromOdom.clear();
-      _fixes.clear();
-      _fixTimes.clear();
-    }
+    final reset = displayFromMap == null;
+    if (reset) displayFromMap = odomFromMap;
     _alignmentTimes.add(time);
     _displayFromOdom.add(displayFromMap! * odomFromMap.inverse());
     return reset;
@@ -168,8 +158,7 @@ class _TopDownPainter extends CustomPainter {
   final TopDownModel m;
   final int revision;
 
-  static const _minSpan = 8.0; // metres shown at least
-  static const _margin = 2.0;
+  static const _span = 14.0; // metres across the view; the view follows the phone and never rotates
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -179,19 +168,11 @@ class _TopDownPainter extends CustomPainter {
       _label(canvas, size, 'Waiting for AR tracking…');
       return;
     }
-    // Fit the path (and the phone) with a margin, centred on the path; map points outside are clipped.
+    // Centred on the phone at a fixed scale: the map only translates as the phone moves.
     bool inSlice(List<double> p) => (p[1] - cur.t[1]).abs() <= TopDownModel.sliceHalfHeight;
-    var minX = cur.t[0], maxX = cur.t[0], minZ = cur.t[2], maxZ = cur.t[2];
     final path3 = m.displayPath.toList();
-    for (final p in path3.where(inSlice)) {
-      minX = math.min(minX, p[0]);
-      maxX = math.max(maxX, p[0]);
-      minZ = math.min(minZ, p[2]);
-      maxZ = math.max(maxZ, p[2]);
-    }
-    final span = math.max(_minSpan, math.max(maxX - minX, maxZ - minZ) + 2 * _margin);
-    final scale = size.shortestSide / span;
-    final cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
+    final scale = size.shortestSide / _span;
+    final cx = cur.t[0], cz = cur.t[2];
     Offset s(double x, double z) => Offset(size.width / 2 + (x - cx) * scale, size.height / 2 + (z - cz) * scale);
 
     final pts = m.mapPointsXZ;

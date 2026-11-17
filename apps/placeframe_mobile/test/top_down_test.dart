@@ -30,11 +30,18 @@ void main() {
     expect(path[6][2], closeTo(expected[2], 1e-9));
   });
 
-  test('an alignment far from the previous one restarts the display frame', () {
+  test('a different alignment keeps the display frame and re-places the path before it', () {
     final m = TopDownModel();
     m.addPose(_at(0, 0), 0);
-    m.addAlignment(0, _yaw(0, [0, 0, 0]), [0, 0, 0]);
-    expect(m.addAlignment(1, _yaw(0.6, [5, 0, 0]), [0, 0, 0]), isTrue);
+    m.addPose(_at(1, 0), 1);
+    expect(m.addAlignment(0.5, _yaw(0, [0, 0, 0]), [0, 0, 0]), isTrue);
+    final display = m.displayFromMap!;
+    // The tracker corrects the alignment by 5 m: no new frame; points up to t=1.5 now use the corrected alignment.
+    final corrected = _yaw(0.6, [5, 0, 0]);
+    expect(m.addAlignment(1.5, corrected, [1, 0, 0]), isFalse);
+    expect(identical(m.displayFromMap, display), isTrue);
+    final expected = (display * corrected.inverse() * _at(1, 0)).t;
+    expect(m.displayPath.toList()[1][0], closeTo(expected[0], 1e-9));
   });
 
   test('map points are drawn in the display frame and cut at the phone height', () {
