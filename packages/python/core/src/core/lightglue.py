@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import UserDict
 from collections.abc import Callable
 from typing import NewType
 
@@ -38,8 +39,10 @@ def lightglue_match(
     device: str,
     on_progress: Callable[[int], None] | None = None,
 ) -> MatchIndices:
-    keypoints_tensors = Keypoints({name: from_numpy(kp).to(device) for name, kp in keypoints.items()})
-    descriptors_tensors = Descriptors({name: from_numpy(desc).to(device) for name, desc in descriptors.items()})
+    # Images move to the GPU when a batch needs them (a few hundred are kept), not all at once: a 9,000-image map's
+    # descriptors alone are ~6-12 GB. Descriptors may be stored in half precision; LightGlue gets float32.
+    keypoints_tensors = Keypoints(_OnDevice(keypoints, device))
+    descriptors_tensors = Descriptors(_OnDevice(descriptors, device))
 
     return lightglue_match_tensors(
         lightglue, pairs, keypoints_tensors, descriptors_tensors, sizes, batch_size, device, on_progress
@@ -93,3 +96,17 @@ def lightglue_match_tensors(
             on_progress(batch_start + len(batch_pairs))
 
     return match_indices
+
+
+# Arrays by image name, moved to the device (as float32) on first use; the oldest are dropped beyond `keep`.
+class _OnDevice(UserDict[str, Tensor]):
+    def __init__(self, arrays: dict[str, ndarray], device: str, keep: int = 512) -> None:
+        super().__init__()
+        self._arrays, self._device, self._keep = arrays, device, keep
+
+    def __missing__(self, name: str) -> Tensor:
+        if len(self) >= self._keep:
+            del self[next(iter(self))]  # insertion order: the oldest
+        value = from_numpy(self._arrays[name]).to(self._device).float()
+        self[name] = value
+        return value

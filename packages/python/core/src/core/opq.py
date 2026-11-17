@@ -43,7 +43,8 @@ def encode_descriptors(
     for i, name in enumerate(image_descriptors.keys()):
         if (i + 1) % max(1, len(image_descriptors) // PROGRESS_STEPS) == 0 or i + 1 == len(image_descriptors):
             print(f"Encoding image {i + 1} of {len(image_descriptors)}")
-        descriptors_contiguous = ascontiguousarray(image_descriptors[name])
+        # Descriptors may be stored in half precision; FAISS takes float32 (converted one image at a time).
+        descriptors_contiguous = ascontiguousarray(image_descriptors[name], dtype=float32)
         descriptors_rotated = cast(NDArray[float32], opq_matrix.apply(descriptors_contiguous))  # type: ignore
         codes = cast(NDArray[uint8], product_quantizer.compute_codes(descriptors_rotated))  # type: ignore
         images_codes[name] = codes

@@ -4,7 +4,7 @@ import os
 from io import BytesIO
 from typing import Any
 
-from numpy import asarray, float16, float32, load, ndarray, savez
+from numpy import asarray, float16, load, ndarray, savez
 
 # Stage checkpoints for workers that can be preempted (rented interruptible GPUs): extracted features and
 # feature matches are written to object storage as they complete, so a re-leased job resumes after the last
@@ -25,7 +25,7 @@ def load_features(
         return None
     names = [str(n) for n in arrays["names"]]
     keypoints = {n: arrays[f"k{i}"] for i, n in enumerate(names)}
-    descriptors = {n: arrays[f"d{i}"].astype(float32) for i, n in enumerate(names)}
+    descriptors = {n: arrays[f"d{i}"] for i, n in enumerate(names)}  # half precision, as stored
     global_descriptors = {n: arrays[f"g{i}"] for i, n in enumerate(names)}
     sizes = {n: (int(arrays["sizes"][i][0]), int(arrays["sizes"][i][1])) for i, n in enumerate(names)}
     return keypoints, descriptors, global_descriptors, sizes
