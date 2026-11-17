@@ -460,7 +460,7 @@
       st.ox += dx * devicePixelRatio / st.scale; st.oy -= dy * devicePixelRatio / st.scale; draw();
     } else if (ptrs.size === 1) {
       st.yaw = (st.yaw + dx * 0.008 + 2 * Math.PI) % (2 * Math.PI);
-      st.pitch = Math.max(0, Math.min(Math.PI / 2, st.pitch + dy * 0.008));
+      st.pitch = Math.max(0, Math.min(Math.PI / 2, st.pitch - dy * 0.008));  // drag up tilts toward the horizon
       document.querySelectorAll('#viewSeg button').forEach(x => x.classList.toggle('on', x.dataset.v === presetName()));
       draw();
     } else if (ptrs.size === 2) {
