@@ -68,7 +68,7 @@ localizing phones against those maps. Our fork is based on `main` (May 2026); we
 
 A cost study (building and serving maps for a 10,000 m² venue with 3,000 attendees, measured on this pipeline) is in
 our pipeline repository: `cost/COST_STUDY.md`. In short: a venue map builds in ~1.3 h on one RTX 3090, and serving
-cost is dominated by how often phones query (adaptive querying: ~$32 per event day on marketplace GPUs) and by
+cost is dominated by how often phones query (adaptive querying: ~$28 per event day on marketplace GPUs) and by
 map egress when GPUs and storage sit in different clouds.
 
 Outside Placeframe (separate repository; happy to share): the Insta360 X5 pipeline (calibration, odometry,

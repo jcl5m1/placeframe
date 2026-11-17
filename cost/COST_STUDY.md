@@ -9,11 +9,11 @@ an Insta360 X5 house capture and a 3-recording house map · **Code:** `cost/` (s
   (was 108 min). Projected for a 10,000 m² venue (~19,700 images, ~28 min of walking): **~1.3 h on one RTX 3090**,
   about $0.20–0.40 of rented GPU time; the first study projected 677 h for one connected map (18 h in tiles).
 - **Serving cost is set by how often phones query.** For 3,000 attendees walking in breaks, an adaptive query rate
-  (every 5 s while fixes agree) needs ~102 RTX 3090s at peak and 211 GPU-hours per event day: **$32/day on
-  marketplace GPUs, $150–213 on cloud on-demand GPUs**. A fixed 2 Hz rate needs 8–10x more.
+  (every 5 s while fixes agree) needs ~89 RTX 3090s at peak and 189 GPU-hours per event day: **$28/day on
+  marketplace GPUs, $134–191 on cloud on-demand GPUs**. A fixed 2 Hz rate needs 8–10x more.
 - **Map storage is negligible (~3 GB per venue, cents per month); data transfer is not.** GPUs that autoscale pull
-  the map (~1.15 GB) each time one starts: ~900 GB/day here. From S3/GCS/Azure to GPUs in another provider that is
-  **$78–108/day in egress, more than the GPUs**; from Cloudflare R2 it is $0. With GPUs in the same cloud as the
+  the map (~1.15 GB) each time one starts: ~770 GB/day here. From S3/GCS/Azure to GPUs in another provider that is
+  **$68–93/day in egress, more than the GPUs**; from Cloudflare R2 it is $0. With GPUs in the same cloud as the
   store, egress is ~$1/day.
 - **Rented GPUs:** a right-sized interruptible RTX 3090 built the 9,072-image map in 75 min for ~$0.58 (home: 37
   min), after two failed attempts. For single builds the home GPU is the better choice; renting pays off for
@@ -91,37 +91,38 @@ starts localizing sends ~10 queries (at 2 Hz) until its place is confirmed, then
 adaptive policy's rate (0.19 queries/s while walking) and its accuracy were measured by replaying a recorded
 5-minute phone walk: 4x fewer queries than 1 Hz with the same accuracy.
 
-**Throughput** (measured, one RTX 3090, tracked queries through the API): 4.9 q/s with one client (p50 198 ms),
-7.4 q/s with four (p50 521 ms); peak GPU memory 2.7 GB, GPU ~60% busy (the CPU side is the limit). We plan with
-7 q/s per GPU, autoscaled every 5 minutes with 30% headroom.
+**Throughput** (measured, one RTX 3090, tracked queries through the API, two localizer processes with sessions
+routed by id): 4.9 q/s with one client (p50 193 ms), 8.0 q/s with four (p50 428 ms), 9.6 q/s with eight (p50 774 ms);
+one process topped out at 7.9 q/s with the GPU a third idle. We plan with 8 q/s per GPU (latency under 0.5 s),
+autoscaled every 5 minutes with 30% headroom.
 
 ![cost](3_serving_cost.png)
 
 | Query policy | Queries per day | Peak q/s | Peak GPUs | GPU-hours/day | Vast RTX 3090 ($0.15/h) | GCP L4 ($0.71/h) | AWS A10G ($1.01/h) |
 |---|---|---|---|---|---|---|---|
-| fixed 2 Hz | 32.1 M | 4,619 | 858 | 2,030 | $304 | $1,441 | $2,050 |
-| fixed 1 Hz | 16.2 M | 2,369 | 440 | 1,026 | $154 | $728 | $1,036 |
-| **adaptive** | **3.3 M** | **547** | **102** | **211** | **$32** | **$150** | **$213** |
+| fixed 2 Hz | 32.1 M | 4,619 | 751 | 1,777 | $266 | $1,261 | $1,794 |
+| fixed 1 Hz | 16.2 M | 2,369 | 385 | 896 | $134 | $636 | $905 |
+| **adaptive** | **3.3 M** | **547** | **89** | **189** | **$28** | **$134** | **$191** |
 
 (L4/A10G throughput is assumed equal to the RTX 3090's; not measured.)
 
-**Storage and transfer** (adaptive policy; the map pulled by every GPU server as it starts, ~775 starts/day; the
+**Storage and transfer** (adaptive policy; the map pulled by every GPU server as it starts, ~670 starts/day; the
 app downloads a ~1 MB point cloud per session; query images go straight to the GPUs):
 
 | Store | Storage | Egress/day, GPUs at a marketplace | Egress/day, GPUs in the same cloud |
 |---|---|---|---|
 | **Cloudflare R2** | $0.05/month | **$0** | $0 |
-| AWS S3 Standard | $0.07/month | $81 | $0.79 |
-| GCS Standard | $0.06/month | $108 | $1.05 |
-| Azure Blob Hot | $0.06/month | $78 | $0.76 |
+| AWS S3 Standard | $0.07/month | $70 | $0.79 |
+| GCS Standard | $0.06/month | $93 | $1.05 |
+| Azure Blob Hot | $0.06/month | $68 | $0.76 |
 
 ## 4. Recommendations
 
 1. **Query adaptively** (done in our client): the largest single factor in serving cost.
 2. **Keep the map next to the GPUs, or on R2.** Marketplace GPUs plus R2, or cloud GPUs plus the same cloud's store;
    avoid paying egress for every scale-up. Keeping a few GPUs warm through sessions also cuts map loads.
-3. **Pack more per GPU:** a tracked query now peaks at 2.7 GB of GPU memory and leaves the GPU 40% idle, so several
-   localizer processes per GPU (or smaller, cheaper GPUs) should raise throughput; not measured yet.
+3. **Pack more per GPU:** two localizer processes per GPU (sessions routed by id) raised throughput ~20% (done);
+   the GPU is still ~25% idle, so the API and CPU-side work are the next limit.
 4. **Reuse base features and matches in merges** (30–50% of a merge, estimated).
 5. **Rent for parallel builds, not single venue builds.**
 
