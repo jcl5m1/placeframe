@@ -349,6 +349,9 @@ def merge(api: PlaceframeApi, job: Path, map_id: str) -> None:
             out.addfile(ti, io.BytesIO(data))
 
         add_bytes("manifest.json", json.dumps(manifest, indent=2).encode())
+        # The reconstructor reuses the base map build's features and matches for these images (same files), so a
+        # merge only extracts the new recording's images and matches pairs that involve them.
+        add_bytes("reuse.json", json.dumps({"base_reconstruction_id": rec["id"]}).encode())
         # Recordings already in the map get the map's solved poses as priors instead of their raw odometry
         # (which drifts by metres/degrees): mapping then only has to solve the new recording.
         map_poses = solved_frame_poses(rec["id"])

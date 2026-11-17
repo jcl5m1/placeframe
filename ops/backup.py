@@ -31,6 +31,9 @@ TABLES = ("capture_sessions", "reconstructions", "localization_maps")
 RECORDINGS = Path.home() / "pf_data" / "localization_recordings"
 RECORDINGS_ARCHIVE = Path("/mnt/hdd12t/placeframe_scratch/localization_recordings")
 KEEP_RECORDING_DAYS = 14
+# Builds keep their features and matches (1-2 GB per map) so merges can reuse them; only maps that may still be
+# merged into need them: builds behind an active map, or younger than KEEP_FEATURES_DAYS.
+KEEP_FEATURES_DAYS = 3
 
 
 def main() -> None:
@@ -43,6 +46,7 @@ def main() -> None:
     if not os.path.ismount("/mnt/hdd12t"):
         raise SystemExit("/mnt/hdd12t is not mounted: nothing backed up or archived tonight")
     archived = archive_recordings()
+    pruned = prune_checkpoints()  # before the mirror, so they are not copied to the HDD either
     t0 = time.time()
     (DEST / "postgres").mkdir(parents=True, exist_ok=True)
     (DEST / "minio").mkdir(parents=True, exist_ok=True)
@@ -68,11 +72,26 @@ def main() -> None:
               "postgres_dump": dump.name, "postgres_bytes": dump.stat().st_size,
               "minio_bytes": int(sh(f"du -sb {DEST / 'minio'}").split()[0]), "minio_ok": mirror[0] == 0,
               "minio_errors": mirror[1][-2000:] if mirror[0] else "", "live_rows": row_counts("placeframe-postgres-1"),
-              "recordings_archived": archived}
+              "recordings_archived": archived, "checkpoints_pruned": pruned}
     (DEST / "last_backup.json").write_text(json.dumps(record, indent=1))
     print(json.dumps({k: v for k, v in record.items() if k != "minio_errors"}))
     if mirror[0]:
         raise SystemExit(f"MinIO mirror failed: {mirror[1][-500:]}")
+
+
+def prune_checkpoints() -> list[str]:
+    """Delete kept features/matches of builds that are not behind an active map and are older than KEEP_FEATURES_DAYS."""
+    q = ("select r.id from reconstructions r where r.created_at < now() - interval '%d days' and not exists "
+         "(select 1 from localization_maps m where m.reconstruction_id = r.id and m.active)" % KEEP_FEATURES_DAYS)
+    ids = [line.strip() for line in sh(f'docker exec placeframe-postgres-1 psql -U postgres -d placeframe -At -c "{q}"').splitlines()
+           if line.strip()]
+    listing = sh("docker exec placeframe-minio-1 mc ls -r l/dev-reconstructions/ --json", check=False)[1]
+    with_checkpoints = {json.loads(line)["key"].split("/")[0] for line in listing.splitlines()
+                        if line.startswith("{") and "/checkpoints/" in json.loads(line).get("key", "")}
+    pruned = [i for i in ids if i in with_checkpoints]
+    for i in pruned:
+        sh(f"docker exec placeframe-minio-1 mc rm -r --force l/dev-reconstructions/{i}/checkpoints/", check=False)
+    return pruned
 
 
 def archive_recordings() -> dict:
