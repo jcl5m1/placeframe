@@ -4,7 +4,7 @@ import time
 import zlib
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, cast
+from typing import Annotated, Any, cast
 from uuid import UUID
 
 from common.multipart_requests import (
@@ -65,7 +65,7 @@ class MapLocalization(BaseModel):
 
 @post("/", operation_class=MultipartRequestOperation)
 async def localize_image(
-    request: Request,
+    request: Request[Any, Any, Any],
     session: AsyncSession,
     data: Annotated[LocalizationRequest, Body(media_type=RequestEncodingType.MULTI_PART)],
 ) -> list[MapLocalization]:
@@ -168,7 +168,7 @@ class TrackedMapLocalization(BaseModel):
 # the most probable one, with its probability; weak matches that fit the trajectory count, stray ones are ignored.
 @post("/track", operation_class=MultipartRequestOperation)
 async def localize_tracked(
-    request: Request,
+    request: Request[Any, Any, Any],
     session: AsyncSession,
     data: Annotated[TrackedLocalizationRequest, Body(media_type=RequestEncodingType.MULTI_PART)],
 ) -> TrackedMapLocalization:
@@ -235,7 +235,7 @@ def _tracking_localizer(session_id: str) -> str:
 
 
 def _record_tracked(
-    request: Request,
+    request: Request[Any, Any, Any],
     data: TrackedLocalizationRequest,
     image: bytes,
     received_at: datetime,
@@ -274,7 +274,7 @@ def _record_tracked(
 
 
 def _record(
-    request: Request,
+    request: Request[Any, Any, Any],
     data: LocalizationRequest,
     image: bytes,
     received_at: datetime,

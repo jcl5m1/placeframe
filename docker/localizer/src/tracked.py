@@ -6,15 +6,24 @@ from typing import Any, cast
 import numpy as np
 from core.calibration import CalibrationArtifact
 from core.camera_config import PinholeCameraConfig
-from core.image_preprocess import canonicalize_image, canonicalize_intrinsics, tile_image
+from core.image_preprocess import (
+    MaxTiles,
+    NumImages,
+    NumQueryTiles,
+    canonicalize_image,
+    canonicalize_intrinsics,
+    tile_image,
+)
 from core.lightglue import Descriptors, Keypoints
 from core.localization_metrics import RANSAC_THRESHOLD_DEFAULT
+from core.model_wrappers import RetrievalDim
+from core.tensor_types import TT
 from core.opq import decode_descriptors
 from numpy import asarray, float32, vstack
 from pycolmap import AbsolutePoseEstimationOptions, RANSACOptions
 from pycolmap import Camera as ColmapCamera
 from pycolmap._core import Rigid3d, estimate_and_refine_absolute_pose, set_random_seed  # type: ignore  # noqa: PLC2701 — no public API
-from torch import Tensor, cuda, inference_mode, manual_seed, topk  # type: ignore
+from torch import cuda, inference_mode, manual_seed, topk  # type: ignore
 
 from . import localize
 from .build_metrics import build_localization_metrics
@@ -80,14 +89,15 @@ def localize_candidates(
     image = canonicalize_image(image_buffer, camera.orientation, QUERY_SHORTER_SIDE)
     rgb = from_numpy(asarray(image, dtype=float32)).permute(2, 0, 1).div(255.0)
     query_keypoints, query_descriptors = localize.local_feature_extractor(rgb.unsqueeze(0).to(device=localize.DEVICE))
-    tiles = [
+    tiles: list[TT[RetrievalDim]] = [
         localize.global_descriptor_extractor(
             from_numpy(asarray(t, dtype=float32)).permute(2, 0, 1).div(255.0).unsqueeze(0).to(device=localize.DEVICE)
         )
         for t in tile_image(image, QUERY_SHORTER_SIDE)
     ]
     database = _gpu_tile_descriptors(map)
-    pairs_similarity = permute(matmul(stack(tiles, dim=0), transpose(database, 1, 2)), (1, 0, 2))
+    query_tiles: TT[NumQueryTiles, RetrievalDim] = stack(tiles, dim=0)
+    pairs_similarity = permute(matmul(query_tiles, transpose(database, 1, 2)), (1, 0, 2))
     similarity = amax(pairs_similarity, dim=(0, 2)).cpu().numpy()
     # A confident track only needs to catch a different place appearing: fewer retrieved images (the images near the
     # predicted pose are matched anyway), so a confident query matches fewer pairs.
@@ -153,20 +163,22 @@ def localize_candidates(
         camera_from_map[:3, :3] = cam_from_world.rotation.matrix()
         camera_from_map[:3, 3] = cam_from_world.translation
         map_from_camera = np.linalg.inv(camera_from_map) @ _UPRIGHT_FROM_SENSOR.get(camera.orientation, np.eye(4))
-        candidates.append(Candidate(map_from_camera, float(metrics.confidence_loose), metrics.num_inliers, source))
+        candidates.append(
+            Candidate(cast(Matrix4, map_from_camera), float(metrics.confidence_loose), metrics.num_inliers, source)
+        )
     release_gpu_memory()
     return candidates
 
 
 # The map's retrieval descriptors stay on the GPU (one copy per loaded map) instead of being uploaded per query.
-def _gpu_tile_descriptors(map: Map) -> Tensor:
+def _gpu_tile_descriptors(map: Map) -> TT[NumImages, MaxTiles, RetrievalDim]:
     key = id(map)
     if key not in _gpu_descriptors:
         _gpu_descriptors[key] = to(from_numpy(map.tile_descriptors), localize.DEVICE)
     return _gpu_descriptors[key]
 
 
-_gpu_descriptors: dict[int, Tensor] = {}
+_gpu_descriptors: dict[int, TT[NumImages, MaxTiles, RetrievalDim]] = {}
 
 
 def _image_geometry(map: Map) -> _ImageGeometry:
@@ -183,7 +195,7 @@ def _image_geometry(map: Map) -> _ImageGeometry:
 # takes the retrieved images within PLACE_RADIUS_M of it.
 def _places(retrieved: list[int], geometry: _ImageGeometry) -> list[tuple[str, list[int]]]:
     groups: list[tuple[str, list[int]]] = []
-    left = list(retrieved)
+    left: list[int] = list(retrieved)
     while left and len(groups) < MAX_PLACES:
         seed = geometry.centers[left[0]]
         group = [i for i in left if np.linalg.norm(geometry.centers[i] - seed) <= PLACE_RADIUS_M]

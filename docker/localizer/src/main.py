@@ -6,7 +6,7 @@ from functools import partial
 from os import environ
 from pathlib import Path
 from threading import Lock
-from typing import Annotated
+from typing import Annotated, TypedDict
 from uuid import UUID
 
 from common.boto_clients import create_s3_client
@@ -179,7 +179,7 @@ async def localize_tracked(
         )
     id, tracker, frame, num_candidates = max(results, key=lambda r: r[1].best.probability if r[1].best else 0.0)
     best = tracker.best
-    frame_info = {
+    frame_info: _FrameInfo = {
         "frame_candidates": num_candidates,
         "frame_agreed": frame.agreed,
         "frame_confidence": frame.selected.confidence if frame.selected else None,
@@ -210,6 +210,14 @@ async def localize_tracked(
         odometry_from_map=_transform(best.odom_from_map),
         **frame_info,
     )
+
+
+class _FrameInfo(TypedDict):
+    frame_candidates: int
+    frame_agreed: bool
+    frame_confidence: float | None
+    frame_inliers: int | None
+    frame_source: str | None
 
 
 @get("/version")
