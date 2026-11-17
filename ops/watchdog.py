@@ -132,6 +132,28 @@ class Watchdog:
             fh.write(json.dumps(rec) + "\n")
         self.actions.append(f"[{rec['status']}] {kind}: {summary}")
 
+    # A condition that has gone away (memory recovered, the HDD is back, the public URL answers) closes its open
+    # incidents, so the dashboard banner shows only what is still wrong.
+    def resolve(self, kind: str, target: str, note: str) -> None:
+        self.state.setdefault("last_incident", {}).pop(f"{kind}:{target}", None)
+        if self.dry or not INCIDENTS.exists():
+            return
+        lines = INCIDENTS.read_text().splitlines()
+        changed = 0
+        for n, line in enumerate(lines):
+            if f'"{kind}"' not in line or "needs_attention" not in line:
+                continue
+            rec = json.loads(line)
+            if rec.get("kind") == kind and rec.get("target", "") == target and rec.get("status") == "needs_attention":
+                rec.update(status="resolved", resolved_at=time.strftime("%Y-%m-%d %H:%M:%S"), resolution=note)
+                lines[n] = json.dumps(rec)
+                changed += 1
+        if changed:
+            tmp = INCIDENTS.with_suffix(".tmp")
+            tmp.write_text("\n".join(lines) + "\n")
+            tmp.replace(INCIDENTS)
+            self.actions.append(f"resolved {changed} {kind} incident(s): {note}")
+
     def launch(self, desc: str, args: list[str], cwd: Path, log: Path) -> bool:
         if self.dry:
             self.actions.append(f"(dry-run) would {desc}")
@@ -176,6 +198,8 @@ class Watchdog:
         if code != "200":
             self.incident("public-endpoint", f"public Placeframe URL returns {code} (Tailscale Funnel / gateway?)",
                           sh("tailscale funnel status 2>&1 | head -5")[1], target="funnel")
+        else:
+            self.resolve("public-endpoint", "funnel", "public URL answers again")
         if not procs(r"sampler\.py"):
             self.launch("restart resource sampler", ["python3", str(COST / "sampler.py")], COST, COST / "sampler.log")
         # The map visualizer is served by the map updater (/placeframe/visualizer/); port 8130 is an alias for it.
@@ -186,6 +210,8 @@ class Watchdog:
         if not os.path.ismount("/mnt/hdd12t"):
             self.incident("storage-offline", "/mnt/hdd12t (backups and archives) is not mounted; real-time services "
                           "are unaffected, backups and archiving are paused", "", fixed=False, target="hdd12t")
+        else:
+            self.resolve("storage-offline", "hdd12t", "/mnt/hdd12t mounted again")
 
     def containers(self) -> None:
         rc, out = docker("ps -a --filter name=placeframe- --format '{{.Names}}\t{{.State}}\t{{.Status}}'")
@@ -401,6 +427,8 @@ class Watchdog:
             self.incident("memory-pressure", f"only {avail_gb:.1f} GB memory available, swap {swap_used:.0%} used "
                           f"(reconstructor {recon_gb:.1f} GB{'' if idle else ', build running'})",
                           top, target="memory")
+        else:
+            self.resolve("memory-pressure", "memory", f"{avail_gb:.1f} GB available again")
 
     def cleanup_published(self) -> None:
         if not os.path.ismount("/mnt/hdd12t"):  # reported by storage(); nothing to do until it is back
