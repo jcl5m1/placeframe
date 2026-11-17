@@ -88,6 +88,16 @@ services:
   localizer-cuda:
     logging: *bounded-logs
     extra_hosts: ["${PUBLIC_DOMAIN:?err}:172.17.0.1"]
+    # Local extension, mounted over the image's source — no rebuild: POST /localization/track, localization of a
+    # moving client with a per-session multi-hypothesis tracker (tracker.py) fed by per-place candidate poses
+    # (tracked.py). The single-frame /localization is unchanged.
+    volumes:
+      - ./docker/localizer/src/main.py:/app/docker/localizer/src/main.py:ro
+      - ./docker/localizer/src/schemas.py:/app/docker/localizer/src/schemas.py:ro
+      - ./docker/localizer/src/tracked.py:/app/docker/localizer/src/tracked.py:ro
+      - ./docker/localizer/src/tracker.py:/app/docker/localizer/src/tracker.py:ro
+      #  image_preprocess.py — query resize size as a parameter (default unchanged), so tracked queries use 640.
+      - ./packages/python/core/src/core/image_preprocess.py:/opt/uv/venv/lib/python3.13/site-packages/core/image_preprocess.py:ro
   grafana:
     extra_hosts: ["${PUBLIC_DOMAIN:?err}:172.17.0.1"]
   state-sync:
