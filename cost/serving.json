@@ -3,7 +3,7 @@
   "attendees": 3000,
   "area_m2": 10000,
   "day_h": 8,
-  "gpu_qps": 7.0,
+  "gpu_qps": 8.0,
   "venue_images": 19662.0,
   "policies_qps_per_user": {
    "fixed 2 Hz": 2.0,
@@ -16,49 +16,49 @@
    "queries_per_day": 32064000.0,
    "peak_qps": 4619.166666666665,
    "mean_qps": 1113.3333333333333,
-   "peak_gpus": 858,
-   "gpu_hours": 2030.0,
-   "instance_starts": 6465,
+   "peak_gpus": 751,
+   "gpu_hours": 1776.6666666666667,
+   "instance_starts": 5658,
    "gpu_cost": {
-    "Vast.ai RTX 3090 interruptible": 304.5,
-    "Vast.ai RTX 4090 interruptible": 609.0,
-    "GCP L4 on-demand (g2-standard-4)": 1441.3,
-    "AWS A10G on-demand (g5.xlarge)": 2050.3
+    "Vast.ai RTX 3090 interruptible": 266.5,
+    "Vast.ai RTX 4090 interruptible": 533.0,
+    "GCP L4 on-demand (g2-standard-4)": 1261.4333333333334,
+    "AWS A10G on-demand (g5.xlarge)": 1794.4333333333334
    }
   },
   "fixed 1 Hz": {
    "queries_per_day": 16152000.0,
    "peak_qps": 2369.166666666665,
    "mean_qps": 560.8333333333334,
-   "peak_gpus": 440,
-   "gpu_hours": 1026.0,
-   "instance_starts": 3317,
+   "peak_gpus": 385,
+   "gpu_hours": 896.0,
+   "instance_starts": 2905,
    "gpu_cost": {
-    "Vast.ai RTX 3090 interruptible": 153.9,
-    "Vast.ai RTX 4090 interruptible": 307.8,
-    "GCP L4 on-demand (g2-standard-4)": 728.4599999999999,
-    "AWS A10G on-demand (g5.xlarge)": 1036.26
+    "Vast.ai RTX 3090 interruptible": 134.4,
+    "Vast.ai RTX 4090 interruptible": 268.8,
+    "GCP L4 on-demand (g2-standard-4)": 636.16,
+    "AWS A10G on-demand (g5.xlarge)": 904.96
    }
   },
   "adaptive (measured)": {
    "queries_per_day": 3263280.0,
    "peak_qps": 546.6666666666652,
    "mean_qps": 113.30833333333334,
-   "peak_gpus": 102,
-   "gpu_hours": 210.66666666666666,
-   "instance_starts": 774,
+   "peak_gpus": 89,
+   "gpu_hours": 188.66666666666666,
+   "instance_starts": 670,
    "gpu_cost": {
-    "Vast.ai RTX 3090 interruptible": 31.599999999999998,
-    "Vast.ai RTX 4090 interruptible": 63.199999999999996,
-    "GCP L4 on-demand (g2-standard-4)": 149.57333333333332,
-    "AWS A10G on-demand (g5.xlarge)": 212.7733333333333
+    "Vast.ai RTX 3090 interruptible": 28.299999999999997,
+    "Vast.ai RTX 4090 interruptible": 56.599999999999994,
+    "GCP L4 on-demand (g2-standard-4)": 133.95333333333332,
+    "AWS A10G on-demand (g5.xlarge)": 190.5533333333333
    }
   }
  },
  "data": {
   "map_GB": 1.1493174563172042,
   "stored_GB": 3.184641675067204,
-  "map_loads_GB_per_day": 889.571711189516,
+  "map_loads_GB_per_day": 770.0426957325268,
   "pointcloud_GB_per_day": 8.7890625,
   "query_upload_GB_per_day": 140.04478454589844
  },
@@ -70,17 +70,17 @@
   },
   "AWS S3 Standard": {
    "storage_per_month": 0.07324675852654569,
-   "egress_per_day_gpus_on_marketplace": 80.85246963205644,
+   "egress_per_day_gpus_on_marketplace": 70.09485824092741,
    "egress_per_day_gpus_in_same_cloud": 0.791015625
   },
   "GCS Standard": {
    "storage_per_month": 0.06369283350134408,
-   "egress_per_day_gpus_on_marketplace": 107.80329284274191,
+   "egress_per_day_gpus_on_marketplace": 93.45981098790321,
    "egress_per_day_gpus_in_same_cloud": 1.0546875
   },
   "Azure Blob Hot": {
    "storage_per_month": 0.057323550151209664,
-   "egress_per_day_gpus_on_marketplace": 78.15738731098789,
+   "egress_per_day_gpus_on_marketplace": 67.75836296622983,
    "egress_per_day_gpus_in_same_cloud": 0.7646484375
   }
  }
