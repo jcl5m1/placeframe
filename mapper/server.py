@@ -578,6 +578,18 @@ def _held() -> str | None:
     return HOLD.read_text(errors="replace").strip() or "held by the operator"
 
 
+# Jobs run up to this many at a time: one recording's preprocessing (CPU: decode, odometry, stitching) overlaps
+# another's reconstruction (GPU, on the server). Recordings of the same group, or merges into the same map, still
+# run one after another: each must merge into the map the previous one produced.
+PARALLEL_JOBS = int(os.environ.get("MAPPER_PARALLEL_JOBS", "2"))
+_running_keys: set[str] = set()
+
+
+def _exclusive_key(j: dict) -> str:
+    return "group:" + (j.get("group") or _upload_meta(j).get("group") or "") if (
+        j.get("group") or _upload_meta(j).get("group")) else ("map:" + j["map_id"] if j.get("map_id") else "job:" + j["id"])
+
+
 def _worker() -> None:
     while True:
         jid = _queue.get()
@@ -586,36 +598,52 @@ def _worker() -> None:
         j = _job(jid)
         if j["state"] == "succeeded":
             continue
-        _set(jid, state="running", started=time.time(), error=None)
-        if j.get("new_map"):
-            base = _combined_map(j)
-            if base:  # an earlier recording of the same upload group already built the map: merge into it
-                j = _set(jid, new_map=False, map_id=base["map_id"], combined_into=base["job"]) or _job(jid)
-        target = ["--new-map"] if j.get("new_map") else ["--map", j["map_id"]]
-        cmd = [sys.executable, "-u", str(REPO / "add_recording_to_map.py"), j["file"], *target,
-               "--job-dir", str(JOBS / jid / "work"), "--odometry", j.get("odometry") or ODOMETRY[0]]
-        pending_name = _pending().get(j.get("group") or "", {}).get("name")
-        default = ((pending_name or _new_map_name(j["filename"], j.get("folder") or "")) if j.get("new_map")
-                   else _default_name(j["map_id"], j["filename"]))
-        cmd += ["--name", j.get("new_name") or default]
-        if j.get("replace"):
-            cmd.append("--replace")
-        with open(JOBS / jid / "log.txt", "a") as log:
-            log.write(f"\n### run started {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-            log.flush()
-            # Own process group: a restart stops the job with everything it started (converters, ffmpeg).
-            rc = subprocess.call(cmd, stdout=log, stderr=subprocess.STDOUT, cwd=REPO, start_new_session=True)
-        result = JOBS / jid / "work" / "result.json"
-        if rc == 0 and result.exists():
-            res = json.loads(result.read_text())
-            # A merged map goes in its base map's folder; a new map in the folder chosen at upload.
-            folder = ((_pending().get(j.get("group") or "", {}).get("folder") or j.get("folder")) if j.get("new_map")
-                      else _folders().get(j["map_id"], ""))
-            if folder and res.get("map_id"):
-                _set_folder(res["map_id"], folder)
-            _set(jid, state="succeeded", finished=time.time(), result=res)
-        else:
-            _set(jid, state="failed", finished=time.time(), error=f"exit code {rc} — see log")
+        key = _exclusive_key(j)
+        with _lock:
+            busy = key in _running_keys
+            if not busy:
+                _running_keys.add(key)
+        if busy:  # a job of the same group/map is running: try again once it may have finished
+            threading.Timer(15, _queue.put, args=(jid,)).start()
+            continue
+        try:
+            _run_job(jid, j)
+        finally:
+            with _lock:
+                _running_keys.discard(key)
+
+
+def _run_job(jid: str, j: dict) -> None:
+    _set(jid, state="running", started=time.time(), error=None)
+    if j.get("new_map"):
+        base = _combined_map(j)
+        if base:  # an earlier recording of the same upload group already built the map: merge into it
+            j = _set(jid, new_map=False, map_id=base["map_id"], combined_into=base["job"]) or _job(jid)
+    target = ["--new-map"] if j.get("new_map") else ["--map", j["map_id"]]
+    cmd = [sys.executable, "-u", str(REPO / "add_recording_to_map.py"), j["file"], *target,
+           "--job-dir", str(JOBS / jid / "work"), "--odometry", j.get("odometry") or ODOMETRY[0]]
+    pending_name = _pending().get(j.get("group") or "", {}).get("name")
+    default = ((pending_name or _new_map_name(j["filename"], j.get("folder") or "")) if j.get("new_map")
+               else _default_name(j["map_id"], j["filename"]))
+    cmd += ["--name", j.get("new_name") or default]
+    if j.get("replace"):
+        cmd.append("--replace")
+    with open(JOBS / jid / "log.txt", "a") as log:
+        log.write(f"\n### run started {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+        log.flush()
+        # Own process group: a restart stops the job with everything it started (converters, ffmpeg).
+        rc = subprocess.call(cmd, stdout=log, stderr=subprocess.STDOUT, cwd=REPO, start_new_session=True)
+    result = JOBS / jid / "work" / "result.json"
+    if rc == 0 and result.exists():
+        res = json.loads(result.read_text())
+        # A merged map goes in its base map's folder; a new map in the folder chosen at upload.
+        folder = ((_pending().get(j.get("group") or "", {}).get("folder") or j.get("folder")) if j.get("new_map")
+                  else _folders().get(j["map_id"], ""))
+        if folder and res.get("map_id"):
+            _set_folder(res["map_id"], folder)
+        _set(jid, state="succeeded", finished=time.time(), result=res)
+    else:
+        _set(jid, state="failed", finished=time.time(), error=f"exit code {rc} — see log")
 
 
 @app.get("/api/jobs")
@@ -704,4 +732,5 @@ def _startup() -> None:
     TELEMETRY.start()
     if os.environ.get("MAPPER_NO_JOBS"):
         return
-    threading.Thread(target=_worker, daemon=True).start()
+    for _ in range(PARALLEL_JOBS):
+        threading.Thread(target=_worker, daemon=True).start()

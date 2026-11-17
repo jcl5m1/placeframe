@@ -319,13 +319,20 @@ class Watchdog:
             in_server_stage = (wd / ".done-merge").exists() and not (wd / ".done-reconstruct").exists()
             if in_server_stage or age_min < 45:
                 continue  # server builds are covered by server_builds(); local stages print regularly
-            kids = procs(r"add_recording_to_map\.py")
-            busy = sum(c for _, c, _ in procs(r"insta360_|stitch_dualfisheye|vio_|insv_to|docker run"))
+            # Only this job's processes: the map updater runs up to two jobs at once.
+            job_dir = str(jf.parent)
+            kids = [k for k in procs(r"add_recording_to_map\.py") if job_dir in k[2]]
+            busy = sum(c for _, c, a in procs(r"insta360_|stitch_dualfisheye|vio_|insv_to|docker run") if job_dir in a)
             if busy > 20:
                 continue
             ev = f"job log silent for {age_min:.0f} min, pipeline cpu {busy:.0f}%\n" + tail(log, 60)
             for pid, _, _ in kids:
                 self.act(f"kill hung merge job process {pid}", f"kill {pid}")
+            others = [k for k in procs(r"add_recording_to_map\.py") if job_dir not in k[2]]
+            if others:  # a restart would also stop the healthy job: leave this one failed for a retry
+                self.incident("merge-hung", f"merge job {j['id']} hung in a local stage; killed (retry it from the "
+                              "dashboard; another job is running)", ev, fixed=False, target=j["id"])
+                continue
             self.act("restart map-updater (resumes the job after its last finished stage)", f"{REPO}/mapper/restart.sh", 120)
             self.incident("merge-hung", f"merge job {j['id']} hung in a local stage; killed and resumed", ev,
                           fixed=False, target=j["id"])

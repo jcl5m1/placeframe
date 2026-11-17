@@ -20,6 +20,7 @@ Odometry backends (both run from local Docker images and write the IMU trajector
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import io
 import json
 import os
@@ -94,21 +95,29 @@ def main() -> None:
     py = [sys.executable, "-u"]
     run_stage("calibrate", lambda: sh(py + [str(HERE / "insta360_dualfisheye_to_placeframe.py"), insv,
                                             "-o", str(job / "fisheye"), "--loop-closure"]))
-    if args.odometry == "openvins":
-        run_stage("openvins-export", lambda: sh(py + [str(HERE / "insv_to_openvins.py"), insv, "--calib",
-                                                      str(job / "fisheye/work"), "-o", str(job / "openvins")]))
-        run_stage("openvins-run", lambda: run_openvins(job))
-        pose_calib = ["--cam-from-imu", str(job / "openvins/config/kalibr_imucam_chain.yaml")]
-    else:
+    def odometry() -> list[str]:
+        if args.odometry == "openvins":
+            run_stage("openvins-export", lambda: sh(py + [str(HERE / "insv_to_openvins.py"), insv, "--calib",
+                                                          str(job / "fisheye/work"), "-o", str(job / "openvins")]))
+            run_stage("openvins-run", lambda: run_openvins(job))
+            return ["--cam-from-imu", str(job / "openvins/config/kalibr_imucam_chain.yaml")]
         run_stage("openvio-export", lambda: sh(py + [str(HERE / "insv_to_openvio.py"), insv, "--calib",
                                                      str(job / "fisheye/work"), "-o", str(job / "openvio"),
                                                      "--bottom-mask", "1.0"]))
         run_stage("openvio-run", lambda: run_openvio(job))
-        pose_calib = ["--imu-from-camera", str(job / "openvio/x5.yaml")]
-    run_stage("stitch", lambda: sh(py + [str(HERE / "stitch_dualfisheye.py"), insv, "--work",
-                                         str(job / "fisheye/work"), "-o", str(job / "equirect")]))
-    run_stage("views", lambda: sh(py + [str(HERE / "insta360_to_placeframe.py"), str(job / "equirect"), "-o",
-                                        str(job / "views"), "--image-interval-ms", "500", "--views-only"]))
+        return ["--imu-from-camera", str(job / "openvio/x5.yaml")]
+
+    def panorama() -> None:
+        run_stage("stitch", lambda: sh(py + [str(HERE / "stitch_dualfisheye.py"), insv, "--work",
+                                             str(job / "fisheye/work"), "-o", str(job / "equirect")]))
+        run_stage("views", lambda: sh(py + [str(HERE / "insta360_to_placeframe.py"), str(job / "equirect"), "-o",
+                                            str(job / "views"), "--image-interval-ms", "500", "--views-only"]))
+
+    # Odometry and stitching both need only the calibration: run them side by side (~6 min saved per recording).
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        odo, pano = pool.submit(odometry), pool.submit(panorama)
+        pose_calib = odo.result()
+        pano.result()
     run_stage("capture", lambda: sh(py + [str(HERE / "vio_to_capture.py"), "--insv", insv, "--vio",
                                           str(job / "ov.tum"), *pose_calib, "--stitch-work", str(job / "fisheye/work"), "--equirect",
                                           str(job / "equirect"), "--views", str(job / "views/work"),
