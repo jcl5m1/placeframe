@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Placeframe · report</title>
+<!-- A report as tailnet visitors see it: the project header, and below it the report itself (the page anyone with
+     the link gets) in a frame. The header's links only work on the tailnet, so public visitors get the report alone. -->
+<style>
+  html, body { margin:0; height:100%; background:#0f1115; color:#e7e9ee; font:15px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  body { display:flex; flex-direction:column; }
+  .bar { max-width:1040px; width:100%; margin:0 auto; padding:16px 16px 0; box-sizing:border-box; }
+  .bar .pfui-header { margin-bottom:0; }
+  iframe { flex:1; width:100%; border:0; display:block; }
+</style>
+</head>
+<body>
+<div class="bar"><div id="hdr"></div></div>
+<iframe id="report" title="Report"></iframe>
+<script src="/placeframe/pf_ui.js"></script>
+<script>
+const frame = document.getElementById('report');
+frame.src = location.pathname + '?embed=1' + location.hash;
+PfUI.header(document.getElementById('hdr'), 'reports', {});
+fetch('data.json').then(r => r.ok ? r.json() : null).then(d => {
+  if (!d) return;
+  document.title = 'Placeframe · ' + d.title;
+  PfUI.header(document.getElementById('hdr'), 'reports', { title: d.title });
+});
+</script>
+</body>
+</html>

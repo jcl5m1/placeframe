@@ -4,7 +4,7 @@
   /visualizer/...       the map visualizer's static files (tailnet only)
   /vendor/...           vendored browser libraries (public)
   /reports/             list of reports (tailnet only)
-  /reports/<id>/        one report, by its unguessable id (anyone with the link)
+  /reports/<id>/        one report, by its unguessable id (anyone with the link; on the tailnet with the header)
   /reports/<id>/comments            GET the comments; PUT the page's comment list (anyone with the link; no login)
   /reports/<id>/comments.json       every comment with where it is in the report, for review tools and agents
 
@@ -118,10 +118,14 @@ async def report_redirect(rid: str):
     return RedirectResponse(f"{rid}/", status_code=308)
 
 
+# One link for everyone: public visitors get the report alone (the project header's links only work on the tailnet);
+# tailnet visitors get the header with the report in a frame below it (the frame loads the same link with ?embed=1).
 @router.get("/reports/{rid}/")
-async def report_page(rid: str):
+async def report_page(rid: str, request: Request, embed: str | None = None):
     _report(rid)
-    return FileResponse(HERE / "static" / "report.html", headers={"Cache-Control": "no-cache"})
+    public = bool(request.headers.get("Tailscale-Funnel-Request"))
+    page = "report.html" if public or embed else "report_frame.html"
+    return FileResponse(HERE / "static" / page, headers={"Cache-Control": "no-cache", "Vary": "Tailscale-Funnel-Request"})
 
 
 @router.get("/reports/{rid}/data.json")

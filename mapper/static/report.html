@@ -28,7 +28,6 @@
 </head>
 <body>
 <div class="wrap">
-  <div id="hdr"></div>
   <div class="top">
     <div><h1 id="title">Loading…</h1><div class="when" id="when"></div></div>
     <button class="share" id="share" type="button">Copy link</button>
@@ -39,7 +38,6 @@
   <article id="doc"></article>
 </div>
 <div class="toast" id="toast"></div>
-<script src="/placeframe/pf_ui.js"></script>
 <script src="/placeframe/vendor/pindrop-0.1.30.umd.js"></script>
 <script>
 const $ = id => document.getElementById(id);
@@ -86,7 +84,6 @@ function toast(text) {
 
 fetch('data.json').then(r => r.ok ? r.json() : Promise.reject(r.status)).then(d => {
   document.title = 'Placeframe · ' + d.title;
-  PfUI.header($('hdr'), 'reports', { title: d.title });
   $('title').textContent = d.title;
   $('when').textContent = `Published ${when(d.created)}` + (d.updated !== d.created ? ` · Updated ${when(d.updated)}` : '');
   doc.innerHTML = d.html;
