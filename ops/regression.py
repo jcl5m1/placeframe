@@ -29,7 +29,7 @@ from add_recording_to_map import PlaceframeApi  # noqa: E402
 
 OUT = Path.home() / "pf_watchdog" / "regression"
 DATASETS = Path("/mnt/hdd12t/placeframe_scratch/datasets/7scenes")
-HOUSE_MAP = "4c17aa5e-aaf8-453a-bfd7-99d2bc176fda"
+HOUSE_MAP = "913aee92-baec-4cf5-9ce0-2f2a075a858c"  # re-registered house map (2026-11-17)
 SUITES = {
     "heads": {"map": "22699ebb-a9e8-45d0-972b-373d4f739df0", "data": DATASETS / "heads_pf"},
     "stairs": {"map": "8fb152c1-b5f4-4c39-b90f-246c91fa0302", "data": DATASETS / "stairs_pf"},

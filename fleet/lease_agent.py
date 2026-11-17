@@ -59,6 +59,13 @@ async def main() -> None:
     auth = TokenManager(str(settings.auth_token_url), settings.auth_client_id, Path(settings.private_key_path))
     configuration = Configuration(host=str(settings.api_internal_url))
     (BROKER / "jobs").mkdir(parents=True, exist_ok=True)
+    # Jobs a previous agent was relaying are lost with it (the server re-queues them after the lease timeout):
+    # mark them done, or the broker would keep renting instances for them.
+    for stale in (BROKER / "jobs").glob("*.json"):
+        (BROKER / "done").mkdir(exist_ok=True)
+        (BROKER / "done" / stale.stem).write_text(str(time.time()))
+        stale.unlink()
+        log("job_abandoned_on_restart", reconstruction=stale.stem)
     active: dict[str, asyncio.Task] = {}
     async with ApiClient(configuration) as client:
         api = DefaultApi(client)
