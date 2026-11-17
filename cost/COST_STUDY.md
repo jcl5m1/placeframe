@@ -15,8 +15,9 @@ an Insta360 X5 house capture and a 3-recording house map · **Code:** `cost/` (s
   the map (~1.15 GB) each time one starts: ~900 GB/day here. From S3/GCS/Azure to GPUs in another provider that is
   **$78–108/day in egress, more than the GPUs**; from Cloudflare R2 it is $0. With GPUs in the same cloud as the
   store, egress is ~$1/day.
-- **Rented GPUs:** right-sized interruptible RTX 3090s were unreliable tonight (see below). For single builds of
-  this size the home GPU is the better choice; renting pays off for parallel builds of different maps.
+- **Rented GPUs:** a right-sized interruptible RTX 3090 built the 9,072-image map in 75 min for ~$0.58 (home: 37
+  min), after two failed attempts. For single builds the home GPU is the better choice; renting pays off for
+  parallel builds of different maps.
 
 ## 1. Building maps
 
@@ -58,21 +59,27 @@ capture; seconds per image as in the joined and merged maps):
 
 ## 2. Rented, right-sized GPU
 
-We tried to build the x4 map on one interruptible Vast.ai RTX 3090 with a host like ours (≥12 cores, ≥32 GB RAM),
-not the cheapest large GPU. 31 matching offers at $0.13–0.16/h minimum bid; the broker bids 1.5x.
+The x4 map (9,072 images) built on one interruptible Vast.ai RTX 3090 with a host like ours (≥8 cores, ≥32 GB RAM),
+filtered for reliability (>0.99) and fast downloads (≥2 Gbit/s), not the cheapest large GPU:
 
-| Attempt | Result |
-|---|---|
-| RTX 3090, China, $0.245/h | 32 min still downloading the 4.3 GB worker environment and the 960 MB capture, then stopped by the host (interruptible: likely outbid) |
-| RTX 3090, Czechia, $0.205/h | failed to start (Docker error on the host) |
-| further offers | none launchable within the filter at ≤ $0.30/h for the next 20 min |
+| Stage | Rented RTX 3090 (Quebec, $0.305/h) | Home RTX 3090 |
+|---|---|---|
+| Create instance to building (worker environment 4.3 GB + capture 0.96 GB) | ~7.5 min | — |
+| Feature extraction | 23.5 min | 12.2 min |
+| Matching + verification | 20.5 min | 15.6 min |
+| Mapping | 18.3 min | 8.0 min |
+| Results back home (2.8 GB) | 3.7 min | — |
+| **Total** | **74.7 min, ~$0.58** (GPU $0.38 + host download charge $0.20) | **36.6 min** |
 
-Spend ~$0.20. It also exposed a bug in our lease heartbeat (an unchanged progress update did not refresh the
-lease, so the job was re-leased to the home GPU while the rented one set up), now fixed. Earlier measured runs
-(yesterday): a rented worker is GPU-ready ~2 min 20 s after creation on a well-connected host, and an A100 built a
-400-image map in ~5 min. **Conclusion:** at ~1.3 h per venue map, a home or reserved GPU is simpler and cheaper;
-rent for parallel builds, choose hosts by download speed and reliability as much as by price, and expect
-interruptible instances to be lost.
+The rented host was ~1.8x slower than ours on the same GPU model (CPU-side image decoding and mapping), and data
+movement added ~11 min. Two earlier attempts the same night failed: a host in China spent 32 min downloading before
+it was stopped (interruptible: likely outbid), and a host in Czechia failed to start. They exposed two bugs in our
+fleet code, both fixed (an unchanged progress update did not refresh the lease, so the job was re-leased to the home
+GPU; a restarted lease agent left an orphaned job the broker kept renting for). Total spend for the night ~$0.85.
+
+**Conclusion:** at ~1.3 h per venue map on a home GPU, renting does not pay for a single build; it pays for
+parallel builds of different maps. Filter hosts by reliability, download speed and region as well as price, and
+expect interruptible instances to be lost.
 
 ## 3. Serving: 3,000 attendees in a 10,000 m² venue
 
