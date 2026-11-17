@@ -85,6 +85,8 @@ def load_requests(root: Path, dates: list[str] | None, client: str | None) -> li
                 r = json.loads(line)
             except ValueError:
                 continue
+            if r.get("endpoint") == "track":  # tracked sessions (/localize/track): see bench/track_replay.py
+                continue
             if client and client not in f"{r.get('client')} {r.get('user_agent')}":
                 continue
             r["_path"] = day.parent / r["image"]
