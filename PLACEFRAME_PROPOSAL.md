@@ -6,6 +6,24 @@ We run Placeframe self-hosted on one RTX 3090 workstation, mapping homes with an
 localizing phones against those maps. Our fork is based on `main` (May 2026); we have since compared it with
 `dev`, `dev_hh` and your open branches (Nov 17) so that we only propose what you don't already have.
 
+## What it looks like
+
+**The map.** A three-storey house (Fairhills Ct) built from three Insta360 X5 walks merged into one map (8,370
+images; extensions 1–3 below), seen from above in our map visualizer. Points are coloured from the photos; the lines
+are the three walks (blue → yellow in time). Before the merge registration followed the X5's heading drift
+(extension 2), part of this house appeared twice, rotated 32°.
+
+![Fairhills Ct map in the visualizer, top-down](proposal_media/fairhills_visualizer.jpg)
+
+**A phone walking through it.** A recorded 5-minute Android walk through all three floors, replayed through tracked
+localization (extension 4) at 5× speed. Left: the phone's camera. Right: the top-down map, cut to ±1 m around the
+phone's height so other floors drop out, with the phone (white), its path registered to the map, and the
+localizations that agreed (green). The phone moves on every frame using ARCore odometry between localizations. On
+this walk the served pose is within 0.5 m on 277 of 286 localizations and wrong by more than 1 m on 6 (one stretch
+with no usable views).
+
+<video src="proposal_media/fairhills_walk_5x.mp4" poster="proposal_media/fairhills_walk_poster.jpg" controls preload="none" playsinline style="width:100%;border-radius:6px"></video>
+
 ## Already on your branches (we will drop ours)
 
 | Our change | Yours |
