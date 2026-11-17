@@ -44,9 +44,13 @@ Everything is under `https://<host>/placeframe/`, served by one project server (
 | `/placeframe/videos/` | generated videos (`?v=<path>` for one) | tailnet |
 
 Every page uses the same header (`web/pf_ui.js`, `PfUI.header`). Reports are published with
-`ops/publish_report.py <file.md>` (re-publishing keeps the link and comments); comments are anchored to the selected
-text (W3C Web Annotation selectors, [Recogito text annotator](web/vendor/README.md)) and readable as Markdown with
-`ops/publish_report.py --comments <id>` or as JSON at `<report link>comments.json`.
+`ops/publish_report.py <file.md>` (re-publishing keeps the link and comments). Readers pin comments anywhere on a
+report ([pindrop.js](web/vendor/README.md)); threads have replies, can be collapsed, resolved, edited and deleted, and
+show when each comment was written and edited. A reader gives their name once, on their first report; it is kept for
+every report in that browser, with a random key that lets only them edit or delete their own comments (the server
+checks it; no accounts). Each comment records its section and the text under the pin, readable as Markdown with
+`ops/publish_report.py --comments <id>` or as JSON at `<report link>comments.json`. Pins are anchored to report
+elements, so re-publishing a heavily changed report can move or drop old pins.
 
 ## Storage policy
 
