@@ -16,6 +16,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -28,6 +29,9 @@ PLACEFRAME = REPO.parent / "placeframe"
 STATE_DIR = HOME / "pf_watchdog"
 STATE = STATE_DIR / "state.json"
 INCIDENTS = STATE_DIR / "incidents.jsonl"
+# Alerts go to this worker's Discord channel through the shared worklog command.
+WL = HOME / "github/jcl5m1/discord_agent/bin/wl"
+ALERT_TO = os.environ.get("WATCHDOG_ALERT_TO", "placeframe@28palomas-rtx3090")
 JOBS = HOME / "pf_mapper/jobs"
 COST = HOME / "pf_cost"
 SCRATCH = Path("/mnt/hdd12t/placeframe_scratch")
@@ -172,7 +176,7 @@ class Watchdog:
 
     # ----------------------------------------------------------------------- checks
     def run(self) -> None:
-        for check in (self.storage, self.services, self.containers, self.server_builds, self.merge_jobs, self.study,
+        for check in (self.gpu, self.storage, self.services, self.containers, self.server_builds, self.merge_jobs, self.study,
                       self.disk, self.memory, self.cleanup_published, self.backups, self.logs):
             try:
                 check()
@@ -185,6 +189,44 @@ class Watchdog:
             tmp.write_text(json.dumps(self.state, indent=2))
             tmp.replace(STATE)
         print(time.strftime("%H:%M:%S"), "; ".join(self.actions) or "all healthy", flush=True)
+
+    # The GPU serves localization and builds. When the driver loses it (e.g. Xid 79, "fallen off the bus", which
+    # needs a reboot) nothing else notices: containers keep running and report healthy. Open an incident (dashboard
+    # banner) and message the owner once per outage; message again when it is back.
+    def gpu(self) -> None:
+        rc, out = sh("nvidia-smi --query-gpu=name --format=csv,noheader", 30)
+        if rc == 0 and out and "Unable" not in out and "No devices" not in out:
+            self.resolve("gpu-unavailable", "gpu", "GPU answers again")
+            if self.state.get("gpu_down_since"):
+                since = self.state.pop("gpu_down_since")
+                down = time.strftime("%H:%M", time.localtime(since))
+                self.alert("gpu", f"up {since}", f"✅ Placeframe GPU is available again ({out.splitlines()[0]}; down since {down}).")
+            return
+        kernel = sh("journalctl -k --since '-24h' -o short-unix --no-pager | grep -E 'Xid|fallen off the bus' | tail -4", 30)[1]
+        xid = re.search(r"^(\d+)\.\d+ .*?Xid \([^)]*\): (\d+), (.*)$", kernel, re.MULTILINE)
+        # Down since the kernel's first GPU error when there is one (the watchdog may notice minutes later).
+        since = self.state.setdefault("gpu_down_since", float(xid.group(1)) if xid else self.now)
+        why = (f"Xid {xid.group(2)}: {xid.group(3).strip().rstrip('.')}" if xid
+               else (out.splitlines() or ["nvidia-smi failed"])[0])
+        reboot = "reboot" in kernel.lower() or (xid is not None and xid.group(2) == "79")
+        summary = (f"GPU unavailable since {time.strftime('%H:%M', time.localtime(since))}: {why[:120]}; localization and "
+                   f"builds are stopped" + ("; the machine needs a reboot" if reboot else ""))
+        self.incident("gpu-unavailable", summary, f"{out}\n{kernel}", target="gpu")
+        self.alert("gpu", f"down {since}", f"⚠️ {summary}.")
+
+    # Messages the owner through the shared worklog (it posts in this project's Discord channel). Sent once per event
+    # (an outage starting, or ending); retried each pass until delivered, so an unreachable harness delays the
+    # message instead of losing it.
+    def alert(self, key: str, event: str, text: str) -> None:
+        sent = self.state.setdefault("alerts_sent", {})
+        if sent.get(key) == event or self.dry:
+            return
+        rc, out = sh(f"{WL} --as {ALERT_TO}/watchdog send {ALERT_TO} {shlex.quote(text)}", 30)
+        if rc == 0:
+            sent[key] = event
+            self.actions.append(f"alerted: {text[:80]}")
+        else:
+            self.actions.append(f"alert not delivered yet ({out[:80]})")
 
     def services(self) -> None:
         rc, code = sh("curl -s -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1:8150/")

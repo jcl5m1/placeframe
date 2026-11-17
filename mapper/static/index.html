@@ -39,6 +39,7 @@
   .tile .v { font-size:20px; font-weight:600; margin:2px 0; font-variant-numeric:tabular-nums; }
   .tile .s { color:var(--muted); font-size:11px; }
   .tile svg { display:block; width:100%; height:26px; margin-top:4px; }
+  .tile.bad { border-color:#d9534f; background:#2a1416; } .tile.bad .v { color:#ff6b6b; } .tile.bad .s { color:#f0b4b4; }
   .task { border-top:1px solid var(--line); padding:10px 0; } .task:first-child { border-top:0; }
   .task .top { display:flex; justify-content:space-between; gap:10px; align-items:baseline; }
   .task .nums { color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; }
@@ -494,7 +495,7 @@ function spark(hist, key, max = 100) {
   const d = pts.map((v, i) => `${(i / (n - 1) * w).toFixed(1)},${(h - 2 - (Math.min(v, max) / max) * (h - 4)).toFixed(1)}`).join(' ');
   return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${d}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
 }
-function tile(k, v, s, svg) { return `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s || ''}</div>${svg || ''}</div>`; }
+function tile(k, v, s, svg, bad) { return `<div class="tile${bad ? ' bad' : ''}"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s || ''}</div>${svg || ''}</div>`; }
 const pct = v => v == null ? '—' : Math.round(v) + '%';
 const dur = s => s == null || !isFinite(s) ? '—' : s < 90 ? Math.round(s) + ' s' : s < 5400 ? Math.round(s / 60) + ' min' : (s / 3600).toFixed(1) + ' h';
 // A rate of 0 only means the counter has not moved recently (long optimisations report no progress);
@@ -544,8 +545,11 @@ function renderStatus(s) {
     ? `<span class="warn">· live data unavailable since ${new Date(s.t * 1000).toLocaleTimeString()}${s.error ? ' (' + esc(s.error.slice(0, 80)) + ')' : ''} — showing machine stats only</span>`
     : '· updated ' + new Date(s.t * 1000).toLocaleTimeString();
   $('tiles').innerHTML =
-    tile('GPU load', pct(m.gpu_util_pct), `${(m.gpu_name || '').replace('NVIDIA GeForce ', '')} · ${m.gpu_power_w ?? '—'} W · ${m.gpu_temp_c ?? '—'}°C`, spark(h, 'gpu')) +
-    tile('GPU memory', m.gpu_mem_gb != null ? m.gpu_mem_gb.toFixed(1) + ' GB' : '—', `of ${m.gpu_mem_total_gb?.toFixed(0) ?? '—'} GB`, spark(h, 'gpu_mem')) +
+    (m.gpu_error
+      ? tile('GPU', 'unavailable', esc(m.gpu_error) + ' · localization and builds are stopped', '', true) +
+        tile('GPU memory', '—', 'GPU unavailable', '', true)
+      : tile('GPU load', pct(m.gpu_util_pct), `${(m.gpu_name || '').replace('NVIDIA GeForce ', '')} · ${m.gpu_power_w ?? '—'} W · ${m.gpu_temp_c ?? '—'}°C`, spark(h, 'gpu')) +
+        tile('GPU memory', m.gpu_mem_gb != null ? m.gpu_mem_gb.toFixed(1) + ' GB' : '—', `of ${m.gpu_mem_total_gb?.toFixed(0) ?? '—'} GB`, spark(h, 'gpu_mem'))) +
     tile('CPU load', pct(m.cpu_pct), `${m.cpu_cores} threads · load ${m.load1 ?? '—'} · reconstructor ${rc.cpu_pct != null ? (rc.cpu_pct / 100).toFixed(1) + ' cores' : '—'}`, spark(h, 'cpu')) +
     tile('RAM', m.ram_used_gb != null ? m.ram_used_gb + ' GB' : '—', `of ${m.ram_total_gb} GB · reconstructor ${rc.mem || '—'}`, spark(h, 'ram')) +
     tile('Disk free', m.disk_free_gb != null ? m.disk_free_gb + ' GB' : '—', `${m.disk_pct}% used`, '');

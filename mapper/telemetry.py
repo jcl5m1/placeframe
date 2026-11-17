@@ -134,15 +134,16 @@ class Telemetry:
         ram_tot, ram_av = mi["MemTotal"] / 1048576, mi["MemAvailable"] / 1048576
         g = {"gpu_util_pct": None, "gpu_mem_pct": None, "gpu_mem_gb": None, "gpu_mem_total_gb": None,
              "gpu_power_w": None, "gpu_temp_c": None, "gpu_name": None}
+        r = None
         try:
-            o = subprocess.run(["nvidia-smi", "--query-gpu=name,utilization.gpu,memory.used,memory.total,power.draw,temperature.gpu",
-                                "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=10).stdout
-            name, util, mu, mt, pw, tc = [x.strip() for x in o.splitlines()[0].split(",")]
+            r = subprocess.run(["nvidia-smi", "--query-gpu=name,utilization.gpu,memory.used,memory.total,power.draw,temperature.gpu",
+                                "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=10)
+            name, util, mu, mt, pw, tc = [x.strip() for x in r.stdout.splitlines()[0].split(",")]
             g = {"gpu_name": name, "gpu_util_pct": float(util), "gpu_mem_gb": float(mu) / 1024,
                  "gpu_mem_total_gb": float(mt) / 1024, "gpu_mem_pct": 100 * float(mu) / float(mt),
                  "gpu_power_w": float(pw), "gpu_temp_c": float(tc)}
-        except Exception:
-            pass
+        except Exception as e:  # the GPU is unreachable (driver error, fallen off the bus) or nvidia-smi is missing
+            g["gpu_error"] = ((r.stderr + r.stdout).strip().splitlines() or [str(e)])[0][:160] if r else str(e)[:160]
         du = shutil.disk_usage(Path.home())
         load1 = float(open("/proc/loadavg").read().split()[0])
         return {"cpu_pct": round(cpu, 1), "cpu_cores": os.cpu_count(), "load1": load1,
