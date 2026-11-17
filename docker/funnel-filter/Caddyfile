@@ -15,7 +15,25 @@ http://:58082 {
 
 
 	# Map updater (resumable .insv uploads -> merge into an existing map). Requires a Placeframe login.
-	redir /mapper /mapper/
+	# Project pages (one server, mapper/server.py on 8150, which decides per route what is public, tailnet-only or
+	# needs a sign-in): /placeframe/ home, dashboard, visualizer, reports, videos.
+	redir /placeframe /placeframe/
+	redir /placeframe/dashboard /placeframe/dashboard/
+	handle_path /placeframe/dashboard/* {
+		reverse_proxy 127.0.0.1:8150 {
+			flush_interval -1
+		}
+	}
+	handle /placeframe/* {
+		rewrite /placeframe/ /placeframe/home
+		uri strip_prefix /placeframe
+		reverse_proxy 127.0.0.1:8150 {
+			flush_interval -1
+		}
+	}
+	# The old dashboard address: the page moved to /placeframe/dashboard/; its API stays here for the phone app.
+	redir /mapper /placeframe/dashboard/
+	redir /mapper/ /placeframe/dashboard/
 	handle_path /mapper/* {
 		reverse_proxy 127.0.0.1:8150 {
 			flush_interval -1
