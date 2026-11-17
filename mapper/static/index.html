@@ -21,7 +21,8 @@
   .drop { border:2px dashed var(--line); border-radius:10px; padding:26px; text-align:center; color:var(--muted); cursor:pointer; margin-top:12px; }
   .drop.over { border-color:var(--accent); color:var(--ink); }
   .item { border-top:1px solid var(--line); padding:12px 0; } .item:first-child { border-top:0; }
-  .item .top { display:flex; justify-content:space-between; gap:10px; align-items:baseline; }
+  .item .top, #alerts > .top { display:flex; justify-content:space-between; gap:10px; align-items:baseline; }
+  .item .acts { display:flex; gap:6px; flex:none; }
   .name { font-weight:600; word-break:break-all; } .meta { color:var(--muted); font-size:12px; }
   .bar { height:8px; background:#0f1218; border-radius:5px; overflow:hidden; margin:8px 0 4px; }
   .bar > div { height:100%; background:var(--accent); width:0; transition:width .3s; }
@@ -518,6 +519,15 @@ function progressBlock(done, total, label, rate, eta, extra) {
     <div class="top"><span class="nums">${esc(label || '')} · ${done.toLocaleString()}/${total.toLocaleString()} (${p.toFixed(1)}%)</span>
     <span class="nums">${rateTxt(rate)}${eta != null ? ' · stage ETA ' + dur(eta) : ''}${extra || ''}</span></div>`;
 }
+// The clipboard API needs a secure page (https); elsewhere fall back to a hidden text field.
+function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+  const t = document.createElement('textarea');
+  t.value = text; t.style.position = 'fixed'; t.style.opacity = '0';
+  document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove();
+  return Promise.resolve();
+}
+
 // Problems the watchdog found and could not fix stay at the top of the page until someone dismisses them.
 function renderProblems(problems) {
   const box = $('alerts');
@@ -526,11 +536,18 @@ function renderProblems(problems) {
   const sig = JSON.stringify(problems.map(p => [p.kind, p.summary, p.ts]));
   if (box.dataset.sig === sig) return;  // don't redraw (and close open details) every 4 s
   box.dataset.sig = sig;
-  box.innerHTML = `<h2 style="color:var(--bad)">⚠ ${problems.length} problem${problems.length > 1 ? 's' : ''} need${problems.length > 1 ? '' : 's'} attention</h2>`
+  box.innerHTML = `<div class="top"><h2 style="color:var(--bad)">⚠ ${problems.length} problem${problems.length > 1 ? 's' : ''} need${problems.length > 1 ? '' : 's'} attention</h2>`
+    + (problems.length > 1 ? `<button class="ghost" data-copy="all">Copy all</button>` : '') + `</div>`
     + problems.map((p, i) => `<div class="item"><div class="top"><span><b>${esc(p.summary)}</b>
         <span class="meta"> · ${esc(p.kind)} · since ${esc(p.ts.slice(5, 16))}</span></span>
-        <button class="ghost" data-dismiss="${i}">Dismiss</button></div>
+        <span class="acts"><button class="ghost" data-copy="${i}">Copy</button><button class="ghost" data-dismiss="${i}">Dismiss</button></span></div>
         ${p.evidence ? `<details><summary class="meta">details</summary><pre>${esc(p.evidence)}</pre></details>` : ''}</div>`).join('');
+  // Copy a problem as plain text (summary, kind, time, evidence), e.g. to paste into a message to the agent.
+  const asText = p => `${p.summary}\n(${p.kind}, since ${p.ts})` + (p.evidence ? `\n\nDetails:\n${p.evidence}` : '');
+  box.querySelectorAll('button[data-copy]').forEach(b => b.onclick = () => {
+    const text = b.dataset.copy === 'all' ? problems.map(asText).join('\n\n---\n\n') : asText(problems[+b.dataset.copy]);
+    copyText(text).then(() => { const old = b.textContent; b.textContent = 'Copied'; setTimeout(() => b.textContent = old, 1500); });
+  });
   box.querySelectorAll('button[data-dismiss]').forEach(b => b.onclick = async () => {
     const p = problems[+b.dataset.dismiss];
     await api('incidents/dismiss', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: p.kind, summary: p.summary }) });
