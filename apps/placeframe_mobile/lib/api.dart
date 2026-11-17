@@ -14,7 +14,36 @@ class MapInfo {
   String get id => json['id'] as String;
   String get name => (json['name'] as String?) ?? id.substring(0, 8);
   bool get active => json['active'] == true;
+  String get createdAt => (json['created_at'] as String?) ?? '';
+  String folder = '';
+  // Placed on the globe (from the capture's GPS); unplaced maps keep their position at the Earth's centre.
+  bool get placed => ['position_x', 'position_y', 'position_z'].any((k) => ((json[k] as num?) ?? 0) != 0);
+  bool get experimental => folder == 'experiments' || folder.startsWith('experiments/');
   String get reconstructionId => json['reconstruction_id'] as String;
+}
+
+// The server's tracked estimate for a localization session (POST /localize/track): the most probable place after
+// the latest frame, with the alignment that turns any later odometry pose into a map pose.
+class TrackedLocalization {
+  TrackedLocalization(this.json);
+  final Map<String, dynamic> json;
+  String? get mapId => json['map_id'] as String?;
+  double get probability => (json['probability'] as num).toDouble();
+  double? get sigmaM => (json['sigma_m'] as num?)?.toDouble();
+  int get fixes => json['fixes'] as int;
+  int get hypotheses => json['hypotheses'] as int;
+  double get unknown => (json['unknown'] as num).toDouble();
+  Pose? get odomFromMap => _pose('odometry_from_map_transform');
+  int get frameCandidates => json['frame_candidates'] as int;
+  bool get frameAgreed => json['frame_agreed'] as bool;
+  double? get frameConfidence => (json['frame_confidence'] as num?)?.toDouble();
+  int? get frameInliers => json['frame_inliers'] as int?;
+  String? get frameSource => json['frame_source'] as String?;
+
+  Pose? _pose(String key) {
+    final j = json[key] as Map<String, dynamic>?;
+    return j == null ? null : Pose.fromTransformJson(j);
+  }
 }
 
 class Localization {
@@ -67,10 +96,56 @@ class PlaceframeApi {
       };
     }
     final list = await _get('/localization-maps', query) as List<dynamic>;
-    return list.map((m) => MapInfo(m as Map<String, dynamic>)).toList();
+    final maps = list.map((m) => MapInfo(m as Map<String, dynamic>)).toList();
+    final folders = await mapFolders();
+    for (final m in maps) {
+      m.folder = folders[m.id] ?? '';
+    }
+    return maps;
   }
 
-  Future<List<Localization>> localize(Uint8List jpeg, Map<String, dynamic> cameraConfig, List<String> mapIds) async {
+  // The map folders kept by the mapper service (same login); experiments live under "experiments/".
+  Future<Map<String, String>> mapFolders() async {
+    try {
+      final r = await _client.get(Uri.parse('${config.serverUrl}/mapper/api/maps'), headers: await _headers());
+      if (r.statusCode != 200) return {};
+      return {
+        for (final m in (jsonDecode(r.body) as List<dynamic>).cast<Map<String, dynamic>>())
+          m['id'] as String: (m['folder'] as String?) ?? ''
+      };
+    } catch (_) {
+      return {};
+    }
+  }
+
+  // The map's 3D points (map frame) from the mapper service, most-observed first: x, y, z per point.
+  Future<Float32List?> mapPoints(String mapId) async {
+    final r = await _client.get(Uri.parse('${config.serverUrl}/mapper/api/maps/$mapId/points'), headers: await _headers());
+    if (r.statusCode != 200) return null;
+    final b = ByteData.sublistView(r.bodyBytes);
+    return Float32List.fromList([for (var i = 0; i + 4 <= b.lengthInBytes; i += 4) b.getFloat32(i, Endian.little)]);
+  }
+
+  // One frame of a tracked session: the image, its camera and its odometry pose (OpenCV camera axes, sensor image
+  // orientation; the server turns the image upright and accounts for it).
+  Future<TrackedLocalization> localizeTracked(Uint8List jpeg, Map<String, dynamic> cameraConfig, List<String> mapIds,
+      String sessionId, Pose odomFromCamera) async {
+    final req = http.MultipartRequest('POST', _uri('/localize/track'))
+      ..headers.addAll(await _headers())
+      ..fields['map_ids'] = jsonEncode(mapIds)
+      ..fields['camera_config'] = jsonEncode(cameraConfig)
+      ..fields['session_id'] = sessionId
+      ..fields['odometry_from_camera'] = jsonEncode(odomFromCamera.toTransformJson())
+      ..files.add(http.MultipartFile.fromBytes('image', jpeg, filename: 'frame.jpg'));
+    final r = await http.Response.fromStream(await _client.send(req));
+    if (r.statusCode >= 400) throw ApiException(r.statusCode, r.body);
+    return TrackedLocalization(jsonDecode(r.body) as Map<String, dynamic>);
+  }
+
+  // [uprightFromCamera]: the turn the server applied to the image (see camera_config orientation); the returned poses
+  // are of the turned camera, so composing with it gives the pose of the camera that took the image.
+  Future<List<Localization>> localize(Uint8List jpeg, Map<String, dynamic> cameraConfig, List<String> mapIds,
+      {Pose uprightFromCamera = const Pose([0, 0, 0, 1], [0, 0, 0])}) async {
     final t = Stopwatch()..start();
     final req = http.MultipartRequest('POST', _uri('/localize'))
       ..headers.addAll(await _headers())
@@ -85,7 +160,7 @@ class PlaceframeApi {
     return list.map((m) {
       final tr = m['camera_from_map_transform'] as Map<String, dynamic>;
       final metrics = (m['metrics'] as Map<String, dynamic>?) ?? {};
-      return Localization(m['id'] as String, Pose.fromTransformJson(tr).inverse(),
+      return Localization(m['id'] as String, Pose.fromTransformJson(tr).inverse() * uprightFromCamera,
           ((metrics['confidence_loose'] as num?) ?? 0).toDouble(), latency, metrics);
     }).toList();
   }
@@ -127,6 +202,15 @@ class ApiException implements Exception {
   ApiException(this.status, this.body);
   final int status;
   final String body;
+  // The server's explanation ("detail"), or the raw body.
+  String get detail {
+    try {
+      final d = (jsonDecode(body) as Map<String, dynamic>)['detail'];
+      if (d is String) return d;
+    } catch (_) {}
+    return body.isEmpty ? 'HTTP $status' : body;
+  }
+
   @override
   String toString() {
     try {

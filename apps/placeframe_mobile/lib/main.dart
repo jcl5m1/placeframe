@@ -1,7 +1,10 @@
+import 'dart:math' as math;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -12,11 +15,20 @@ import 'auth.dart';
 import 'capture.dart';
 import 'config.dart';
 import 'geo.dart';
+import 'top_down.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final config = await Config.load();
   final auth = Auth(config);
+  if (Config.testPassword.isNotEmpty && config.serverUrl.isNotEmpty) {
+    try {
+      await auth.login(config.username, Config.testPassword);
+      debugPrint('PF: auto-login ok as ${config.username}');
+    } catch (e) {
+      debugPrint('PF: auto-login failed: $e');
+    }
+  }
   runApp(PlaceframeApp(config: config, auth: auth, api: PlaceframeApi(config, auth)));
 }
 
@@ -131,13 +143,35 @@ class LocalizeScreen extends StatefulWidget {
 class _LocalizeScreenState extends State<LocalizeScreen> {
   List<MapInfo> _maps = [];
   final Set<String> _selected = {};
-  bool _nearby = true, _loadingMaps = false, _running = false, _inFlight = false;
+  bool _nearby = Config.defaultMap.isEmpty, _loadingMaps = false, _running = false, _inFlight = false;
+  // Adaptive query rate: once the place is confirmed and queries keep agreeing, odometry carries the pose and a
+  // query every _trackingInterval keeps it registered; any disagreement or odometry jump goes back to every frame.
+  // On a recorded 5-minute walk this sent 4x fewer queries than one per second with the same accuracy.
+  bool _lastQueryAgreed = false;
+  double _lastSentAt = -1e9; // AR clock seconds
+  static const _trackingInterval = 5.0, _trackingProbability = 0.95;
+  static const _odometryJumpMetres = 1.0, _odometryJumpSpeed = 3.0;
   Position? _fix;
   String? _status;
   Localization? _last;
   ArFrame? _lastFrame;
   int _attempts = 0, _successes = 0;
   StreamSubscription<ArFrame>? _sub;
+  StreamSubscription<ArPose>? _poseSub;
+  final _view = TopDownModel();
+  int _viewRevision = 0;
+  final Map<String, Float32List?> _mapPoints = {}; // map id -> points (null: none available)
+  TrackedLocalization? _tracked; // the server's estimate after the latest frame
+  String _sessionId = ''; // one tracking session per start: odometry restarts with the AR session
+  static const _showProbability = 0.8; // draw the place and its map points from this probability
+  double? _sliceHeight; // phone height the shown map-point slice was cut at
+  final _ui = ValueNotifier<int>(0); // bumped on every change; the full-screen localizing page listens
+  DateTime? _startedAt, _lastLocalizedAt;
+  String? _lastReason, _lastOrientation;
+  int? _lastLatencyMs, _lastBytes;
+  ArPose? _lastPose;
+  int _poses = 0;
+  final List<String> _log = []; // recent outcomes, newest first
 
   @override
   void initState() {
@@ -166,9 +200,20 @@ class _LocalizeScreenState extends State<LocalizeScreen> {
       } else {
         _maps = await widget.api.maps();
       }
+      _maps = _maps.where((m) => !m.experimental).toList(); // experiments stay out of the app
+      if (_nearby) _maps = _maps.where((m) => m.placed).toList(); // maps created without GPS have no place
       _maps.sort((a, b) => (b.active ? 1 : 0) - (a.active ? 1 : 0));
       _selected.retainAll(_maps.map((m) => m.id));
+      if (_selected.isEmpty && Config.defaultMap.isNotEmpty) {
+        // The newest matching map: a rebuilt map keeps its predecessor's name with a suffix.
+        final matches = _maps.where((m) => m.active && m.name.contains(Config.defaultMap)).toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        _selected.addAll(matches.map((m) => m.id).take(1));
+      }
       if (_selected.isEmpty) _selected.addAll(_maps.where((m) => m.active).map((m) => m.id).take(_nearby ? 4 : 1));
+      debugPrint('PF: ${_maps.length} maps (experiments hidden): '
+          '${_maps.map((m) => '${m.folder.isEmpty ? '' : '${m.folder}/'}${m.name}${m.active ? '' : ' (inactive)'}').join(' | ')}');
+      debugPrint('PF: selected ${_maps.where((m) => _selected.contains(m.id)).map((m) => m.name).join(', ')}');
     } catch (e) {
       _status = '$e';
     } finally {
@@ -179,47 +224,229 @@ class _LocalizeScreenState extends State<LocalizeScreen> {
   Future<void> _start() async {
     if (_selected.isEmpty) return setState(() => _status = 'Select at least one map');
     if (!await cameraAllowed()) return setState(() => _status = 'Camera permission is needed');
-    _attempts = _successes = 0;
+    _attempts = _successes = _poses = 0;
+    _last = _lastPose = null;
+    _lastReason = _lastOrientation = null;
+    _lastLatencyMs = _lastBytes = null;
+    _startedAt = DateTime.now();
+    _lastLocalizedAt = null;
+    _log.clear();
+    _view.reset();
+    _tracked = null;
+    _lastQueryAgreed = false;
+    _lastSentAt = -1e9;
+    _sessionId = List.generate(16, (_) => math.Random.secure().nextInt(256).toRadixString(16).padLeft(2, '0')).join();
+    _sliceHeight = null;
     try {
       await ArFrames.start(intervalSeconds: widget.config.localizeIntervalSeconds);
     } catch (e) {
       return setState(() => _status = 'AR tracking unavailable: $e');
     }
     _sub = ArFrames.frames.listen(_onFrame);
+    _poseSub = ArFrames.poses.listen(_onPose);
     setState(() {
       _running = true;
       _status = 'Point the camera at the mapped space…';
     });
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    if (!mounted) return;
+    await Navigator.of(context).push(MaterialPageRoute<void>(fullscreenDialog: true, builder: _runPage));
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    await _stop(); // the page was closed (stop button or back)
   }
 
   Future<void> _stop() async {
     await _sub?.cancel();
+    await _poseSub?.cancel();
     _sub = null;
+    _poseSub = null;
     if (_running) await ArFrames.stop();
     if (mounted) setState(() => _running = false);
   }
 
+  void _changed() {
+    _ui.value++;
+    if (mounted) setState(() {});
+  }
+
+  void _onPose(ArPose p) {
+    final previous = _lastPose;
+    // Tracking regained: ARCore may have re-anchored its world while it was lost.
+    if (previous != null && previous.tracking != 'normal' && p.tracking == 'normal') _lastQueryAgreed = false;
+    if (previous != null && previous.tracking == 'normal' && p.tracking == 'normal') {
+      final step = p.worldFromCamera.distanceTo(previous.worldFromCamera);
+      final dt = math.max(p.timestamp - previous.timestamp, 0.05);
+      // The odometry re-anchored itself: the map alignment changed, so query at once.
+      if (step > _odometryJumpMetres && step / dt > _odometryJumpSpeed) _lastQueryAgreed = false;
+    }
+    _lastPose = p;
+    _poses++;
+    if (p.tracking != 'normal') return _changed();
+    _view.addPose(p.worldFromCamera, p.timestamp);
+    final h = _view.currentDisplay!.t[1];
+    if (_view.registered && (_sliceHeight == null || (h - _sliceHeight!).abs() > 0.25)) _cutMapSlice();
+    _viewRevision++;
+    _changed(); // the map pose shown is the server's alignment applied to this odometry pose: updated at 10 Hz
+  }
+
   Future<void> _onFrame(ArFrame f) async {
     _lastFrame = f;
+    if (!f.trackingOk) {
+      _status = 'Waiting for AR tracking: move the phone slowly'; // the server needs the odometry pose
+      return _changed();
+    }
     if (_inFlight) return; // one request at a time; later frames are newer anyway
+    if (_trackingMode && f.timestamp - _lastSentAt < _trackingInterval) return;
+    _lastSentAt = f.timestamp;
     _inFlight = true;
     _attempts++;
+    _lastOrientation = f.orientation;
+    _lastBytes = f.jpeg.length;
+    final t = Stopwatch()..start();
     try {
-      final results = await widget.api.localize(f.jpeg, f.cameraConfig, _selected.toList());
-      if (results.isEmpty) {
-        _status = 'Not localized';
-      } else {
-        results.sort((a, b) => b.confidence.compareTo(a.confidence));
-        _last = results.first;
-        _successes++;
-        _status = 'Localized';
-      }
+      final tr = await widget.api.localizeTracked(f.jpeg, f.cameraConfig, _selected.toList(), _sessionId, f.worldFromCamera);
+      _onTracked(f, tr);
+      _lastQueryAgreed = tr.frameAgreed;
     } catch (e) {
-      _status = e is ApiException && e.status == 404 ? 'Not localized' : '$e';
+      _lastQueryAgreed = false;
+      _status = 'Error';
+      _lastReason = e is ApiException ? e.detail : '$e';
+      debugPrint('PF: frame ${f.orientation}: error: $_lastReason');
     } finally {
       _inFlight = false;
-      if (mounted) setState(() {});
+      _lastLatencyMs = t.elapsedMilliseconds;
+      final time = DateTime.now().toIso8601String().substring(11, 19);
+      _log.insert(0, '$time ${'${_lastLatencyMs}ms'.padLeft(6)}  ${_lastReason ?? ''}');
+      if (_log.length > 12) _log.removeLast();
+      _changed();
     }
+  }
+
+  void _onTracked(ArFrame f, TrackedLocalization tr) {
+    _tracked = tr;
+    final align = tr.odomFromMap;
+    if (tr.probability >= _showProbability && align != null) {
+      // The display frame follows the map; a reset (first fix or a different place) needs the map points re-cut.
+      if (_view.addAlignment(f.timestamp, align, f.worldFromCamera.t)) _sliceHeight = null;
+      if (tr.frameAgreed) _view.addFix(f.timestamp, f.worldFromCamera.t);
+    }
+    if (tr.frameAgreed) {
+      _successes++;
+      _lastLocalizedAt = DateTime.now();
+    }
+    final pct = '${(100 * tr.probability).round()}%';
+    _status = tr.probability >= _showProbability
+        ? 'Localized · $pct'
+        : tr.mapId != null
+            ? 'Localizing… $pct'
+            : 'Not localized';
+    final c = tr.frameConfidence;
+    _lastReason = '${tr.frameCandidates} candidates · '
+        '${tr.frameAgreed ? 'agreed (${tr.frameSource}, conf ${c!.toStringAsFixed(2)}, ${tr.frameInliers} inliers)' : 'none agreed'}'
+        ' → $pct';
+    debugPrint('PF: tracked ${f.orientation} $_lastReason hyps=${tr.hypotheses} sigma=${tr.sigmaM?.toStringAsFixed(2)}');
+    final mapId = tr.mapId;
+    if (mapId != null && !_mapPoints.containsKey(mapId)) {
+      _mapPoints[mapId] = null;
+      widget.api.mapPoints(mapId).then((pts) {
+        _mapPoints[mapId] = pts;
+        debugPrint('PF: map points ${mapId.substring(0, 8)}: ${(pts?.length ?? 0) ~/ 3}');
+        _cutMapSlice();
+        _changed();
+      }, onError: (Object e) => debugPrint('PF: map points unavailable: $e'));
+    }
+    _cutMapSlice();
+  }
+
+  bool get _trackingMode => _lastQueryAgreed && (_tracked?.probability ?? 0) >= _trackingProbability;
+
+  Pose? get _confidentAlignment {
+    final tr = _tracked;
+    return tr != null && tr.probability >= _showProbability ? tr.odomFromMap : null;
+  }
+
+  // The map points of the localized map, in the view's map-fixed display frame, cut at the phone's height.
+  void _cutMapSlice() {
+    final cur = _view.currentDisplay, mapId = _tracked?.mapId;
+    final pts = !_view.registered || mapId == null ? null : _mapPoints[mapId];
+    if (pts == null || cur == null) {
+      _view.mapPointsXZ = null;
+      _view.mapPointCount = 0;
+      return;
+    }
+    _sliceHeight = cur.t[1];
+    _view.setMapPoints(pts, _sliceHeight!);
+    _viewRevision++;
+  }
+
+  // The full-screen page while localizing: the top-down view and verbose stats for debugging.
+  Widget _runPage(BuildContext context) {
+    String mapName(String id) => _maps.where((m) => m.id == id).map((m) => m.name).firstOrNull ?? id.substring(0, 8);
+    String age(DateTime? t) => t == null ? '-' : '${DateTime.now().difference(t).inSeconds} s ago';
+    String v3(List<double> v) => v.map((x) => x.toStringAsFixed(2)).join(', ');
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Localizing · ${_selected.map(mapName).join(', ')}', overflow: TextOverflow.ellipsis),
+        actions: [IconButton(icon: const Icon(Icons.stop_circle_outlined), onPressed: () => Navigator.of(context).pop())],
+      ),
+      body: ValueListenableBuilder<int>(
+        valueListenable: _ui,
+        builder: (context, _, _) {
+          final pose = _lastPose, tr = _tracked, align = _confidentAlignment;
+          final ok = align != null;
+          final mapPose = align == null || pose == null ? null : align.inverse() * pose.worldFromCamera;
+          final rows = <(String, String)>[
+            ('Tracking', '${pose?.tracking ?? '-'} · $_poses poses · path ${_view.pathLength.toStringAsFixed(1)} m'),
+            ('Odometry', pose == null ? '-' : v3(pose.worldFromCamera.t)),
+            ('Probability', tr == null ? '-' : '${(100 * tr.probability).toStringAsFixed(1)}% this is the right place'
+                ' · ±${tr.sigmaM?.toStringAsFixed(2) ?? '-'} m · ${tr.fixes} fixes'),
+            ('Places tracked', tr == null ? '-' : '${tr.hypotheses} · elsewhere ${(100 * tr.unknown).toStringAsFixed(0)}%'),
+            ('Query rate', _trackingMode ? 'tracking: every ${_trackingInterval.round()} s (odometry carries the pose)'
+                : 'searching: every frame'),
+            ('Frames', '$_successes agreed / $_attempts sent'
+                '${_attempts > 0 ? ' (${(100 * _successes / _attempts).round()}%)' : ''} · ${_inFlight ? 'request in flight' : 'idle'}'),
+            ('Last frame', tr == null ? '-' : '${tr.frameCandidates} candidate poses · ${tr.frameAgreed ? 'one agreed' : 'none agreed'}'),
+            ('Localization conf.', tr?.frameConfidence == null ? '-'
+                : '${(100 * tr!.frameConfidence!).toStringAsFixed(0)}% · ${tr.frameInliers} inliers · ${tr.frameSource}'),
+            ('Last request', '${_lastOrientation ?? '-'} · ${_lastBytes == null ? '-' : '${(_lastBytes! / 1024).round()} KB'}'
+                ' · ${_lastLatencyMs ?? '-'} ms'),
+            ('Last agreed', '${tr?.mapId == null ? '-' : mapName(tr!.mapId!)} · ${age(_lastLocalizedAt)}'),
+            ('Map points', _view.mapPointCount > 0 ? '${_view.mapPointCount} within ±1 m of the phone' : 'once localized'),
+            ('Running', age(_startedAt).replaceAll(' ago', '')),
+          ];
+          return ListView(padding: const EdgeInsets.all(12), children: [
+            Text(_status ?? '', style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                color: ok ? Colors.greenAccent : (_status == 'Error' ? Colors.redAccent : null))),
+            Text(mapPose == null
+                ? 'Map pose: -'
+                : 'Map pose: ${v3(mapPose.t)} m · heading ${_heading(mapPose).toStringAsFixed(0)}°',
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 15)),
+            const SizedBox(height: 8),
+            TopDownView(model: _view, revision: _viewRevision),
+            Text('Blue: path (AR odometry) · green: frames that agreed with the place · grey: map points · '
+                'all within ±1 m of the phone height',
+                style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 8),
+            Table(columnWidths: const {0: IntrinsicColumnWidth()}, children: [
+              for (final (k, v) in rows)
+                TableRow(children: [
+                  Padding(padding: const EdgeInsets.only(right: 12, bottom: 3), child: Text(k, style: const TextStyle(color: Colors.white60))),
+                  Text(v),
+                ]),
+            ]),
+            const SizedBox(height: 8),
+            for (final line in _log)
+              Text(line, style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: Colors.white70)),
+          ]);
+        },
+      ),
+    );
+  }
+
+  // Compass-style heading of the camera's view direction in the map's horizontal plane (map x/z, degrees).
+  static double _heading(Pose mapFromCamera) {
+    final r = mapFromCamera.rotationMatrix;
+    return (math.atan2(r[2], r[8]) * 180 / math.pi) % 360;
   }
 
   @override
@@ -232,7 +459,12 @@ class _LocalizeScreenState extends State<LocalizeScreen> {
           child: SegmentedButton<bool>(
             segments: const [ButtonSegment(value: true, label: Text('Nearby')), ButtonSegment(value: false, label: Text('All maps'))],
             selected: {_nearby},
-            onSelectionChanged: _running ? null : (v) => setState(() => _nearby = v.first),
+            onSelectionChanged: _running
+                ? null
+                : (v) {
+                    _nearby = v.first;
+                    _loadMaps();
+                  },
           ),
         ),
         IconButton(onPressed: _loadingMaps || _running ? null : _loadMaps, icon: const Icon(Icons.refresh)),
@@ -243,13 +475,13 @@ class _LocalizeScreenState extends State<LocalizeScreen> {
       if (_loadingMaps) const LinearProgressIndicator(),
       if (!_loadingMaps && _maps.isEmpty)
         const Padding(padding: EdgeInsets.all(8), child: Text('No maps found. Try “All maps”: maps without a GPS placement are not found by location.')),
-      for (final m in _maps)
+      for (final m in _maps.where((m) => !_running || _selected.contains(m.id)))
         CheckboxListTile(
           dense: true,
           value: _selected.contains(m.id),
           onChanged: _running ? null : (v) => setState(() => v == true ? _selected.add(m.id) : _selected.remove(m.id)),
           title: Text(m.name),
-          subtitle: Text(m.active ? 'active' : 'inactive'),
+          subtitle: Text('${m.folder.isEmpty ? '' : '${m.folder} · '}${m.active ? 'active' : 'inactive'}'),
         ),
       const SizedBox(height: 8),
       FilledButton.icon(
