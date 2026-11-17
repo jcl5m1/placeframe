@@ -53,7 +53,8 @@ services:
     volumes:
       - ./docker/api/src/routers/localization.py:/app/docker/api/src/routers/localization.py:ro
       - ./docker/api/src/routers/leases.py:/app/docker/api/src/routers/leases.py:ro
-      - /mnt/hdd12t/placeframe_scratch/localization_recordings:/recordings
+      # On the SSD: the API must not depend on the HDD (backups/archives only; ops/backup.py archives older days).
+      - /home/jcl5m1/pf_data/localization_recordings:/recordings
   reconstructor-cuda:
     logging: *bounded-logs
     # Fleet worker image (placeframe-insta360/gpu/Dockerfile.worker): the pinned upstream reconstructor image +
