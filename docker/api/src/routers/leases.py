@@ -121,6 +121,10 @@ async def update_progress(session: AsyncSession, id: UUID, data: ProgressUpdate)
     row.progress_total = data.progress_total
     row.progress_attempt = data.progress_attempt
     row.error = data.error
+    # A progress call is the lease heartbeat. An unchanged update (a rented worker still downloading reports the same
+    # phase every minute) would otherwise write nothing, leave updated_at alone, and the job would be re-leased to
+    # another worker while the first still runs it.
+    row.updated_at = func.now()
 
     await session.flush()
     await session.commit()
