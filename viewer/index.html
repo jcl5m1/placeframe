@@ -68,7 +68,7 @@
       <input type="range" id="hMin" min="-2" max="2.5" step="0.05" value="-2">
       <input type="range" id="hMax" min="-2" max="2.5" step="0.05" value="0.9">
       <div class="row"><span id="hMinV"></span><span id="hMaxV"></span></div>
-      <div class="note">Default cuts the ceiling off so walls and furniture read clearly from above.</div>
+      <div class="note">The range spans this map's points. Drag the upper handle down to cut the ceiling off, so walls and furniture read clearly from above.</div>
       <label><input type="checkbox" id="robust" checked> Only well-observed points (seen ≥ 3×)</label>
       <div>Point size</div>
       <input type="range" id="psize" min="0.5" max="4" step="0.25" value="1.25">
@@ -131,7 +131,7 @@
   const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
   const $ = id => document.getElementById(id);
   const V = data.vio || []; const OV = data.ovio || []; const OVS = data.ovins || [];
-  const st = { ovins: true, ovio: true, vio: true, view: 'top', color: 'rgb', hMin: -2, hMax: 0.9, robust: true, psize: 1.25, path: true, orig: false, t: 1e9, scale: 40, ox: 0, oy: 0 };
+  const st = { ovins: true, ovio: true, vio: true, view: 'top', yaw: 0, pitch: 0, color: 'rgb', hMin: -2, hMax: 0.9, robust: true, psize: 1.25, path: true, orig: false, t: 1e9, scale: 40, ox: 0, oy: 0 };
 
   const TMAX = Math.max(1, ...C.map(c => c[3] / 1000), ...V.map(v => v[3]));
   st.t = TMAX; $('tSlider').max = TMAX; $('tSlider').value = TMAX;
@@ -142,12 +142,28 @@
   function fmt(s) { const m = Math.floor(s / 60); return `${m}:${(s - m*60).toFixed(1).padStart(4,'0')}`; }
   const hs = P.map(p => p[1]).sort((a,b)=>a-b);
   const hLo = hs[Math.floor(hs.length*0.02)], hHi = hs[Math.floor(hs.length*0.98)];
+  // The height slice spans this map's points (heights differ per map and coordinate frame); start showing all.
+  const hAll0 = Math.floor(hs[0] * 20) / 20, hAll1 = Math.ceil(hs[hs.length - 1] * 20) / 20;
+  const hStep = Math.max(0.01, +((hAll1 - hAll0) / 400).toFixed(2));
+  for (const id of ['hMin', 'hMax']) { $(id).min = hAll0; $(id).max = hAll1; $(id).step = hStep; }
+  st.hMin = hAll0; st.hMax = hAll1; $('hMin').value = hAll0; $('hMax').value = hAll1;
+  // Orbit pivot: the middle of the points, so the map turns in place.
+  const mid = k => { const a = P.map(p => p[k]).sort((x, y) => x - y); return a.length ? a[a.length >> 1] : 0; };
+  const pivot = [mid(0), mid(1), mid(2)];
 
-  // projection: world (x, h, z) -> 2D (u, v), u right, v up
+  // projection: world (x, h, z) -> 2D (u, v), u right, v up. Orthographic orbit: yaw turns about the vertical
+  // axis, pitch tilts from looking straight down (0) to looking along the horizon (90 deg). The presets are
+  // top-down (0, 0), side along Z (0, 90 deg) and side along X (90 deg, 90 deg).
+  const PRESETS = { top: [0, 0], sideX: [0, Math.PI / 2], sideZ: [Math.PI / 2, Math.PI / 2] };
   function proj(x, h, z) {
-    if (st.view === 'top') return [x, z];  // looking down along gravity (+y in this y-down world): screen up = +z
-    if (st.view === 'sideX') return [x, h];
-    return [z, h];
+    x -= pivot[0]; h -= pivot[1]; z -= pivot[2];
+    const cy = Math.cos(st.yaw), sy = Math.sin(st.yaw), cp = Math.cos(st.pitch), sp = Math.sin(st.pitch);
+    const u = cy * x + sy * z, w = -sy * x + cy * z;
+    return [u, cp * w + sp * h];
+  }
+  function presetName() {
+    for (const [k, [y, p]] of Object.entries(PRESETS)) if (Math.abs(st.yaw - y) < 1e-3 && Math.abs(st.pitch - p) < 1e-3) return k;
+    return null;
   }
   function toScreen(u, v) { return [cv.width/2 + (u + st.ox) * st.scale, cv.height/2 - (v + st.oy) * st.scale]; }
   function fromScreen(px, py) { return [(px - cv.width/2)/st.scale - st.ox, -(py - cv.height/2)/st.scale - st.oy]; }
@@ -180,7 +196,7 @@
     // grid (1 m)
     ctx.strokeStyle = '#1d222b'; ctx.lineWidth = 1;
     const [ua, va] = fromScreen(0, H), [ub, vb] = fromScreen(W, 0);
-    if (st.scale > 6) {
+    if (st.scale > 6 && presetName()) {
       ctx.beginPath();
       for (let u = Math.floor(ua); u <= ub; u++) { const [x] = toScreen(u, 0); ctx.moveTo(x, 0); ctx.lineTo(x, H); }
       for (let v = Math.floor(va); v <= vb; v++) { const [, y] = toScreen(0, v); ctx.moveTo(0, y); ctx.lineTo(W, y); }
@@ -252,7 +268,10 @@
       if (last) { const s1 = toScreen(...proj(last[0], last[1], last[2])); ctx.fillStyle = '#fde725'; ctx.beginPath(); ctx.arc(s1[0], s1[1], 5 * devicePixelRatio, 0, 7); ctx.fill(); }
     }
     drawSession();
-    $('hud').textContent = `${shown.toLocaleString()} points shown · ${st.view === 'top' ? 'top-down (looking down; map +Z up)' : st.view === 'sideX' ? 'side view along Z' : 'side view along X'} · 1 grid square = 1 m`;
+    const pn = presetName();
+    const viewText = pn === 'top' ? 'top-down (looking down; map +Z up)' : pn === 'sideX' ? 'side view along Z' : pn === 'sideZ' ? 'side view along X'
+      : `orbit: turn ${Math.round(st.yaw * 180 / Math.PI) % 360}°, tilt ${Math.round(st.pitch * 180 / Math.PI)}°`;
+    $('hud').textContent = `${shown.toLocaleString()} points shown · ${viewText}${pn ? ' · 1 grid square = 1 m' : ''} · drag: orbit · right/Shift-drag: pan`;
   }
 
   function resize() {
@@ -403,7 +422,7 @@
   }
   document.querySelectorAll('#viewSeg button').forEach(b => b.onclick = () => {
     document.querySelectorAll('#viewSeg button').forEach(x => x.classList.toggle('on', x === b));
-    st.view = b.dataset.v; fit(); draw();
+    st.view = b.dataset.v; [st.yaw, st.pitch] = PRESETS[st.view]; fit(); draw();
   });
   document.querySelectorAll('#colorSeg button').forEach(b => b.onclick = () => {
     document.querySelectorAll('#colorSeg button').forEach(x => x.classList.toggle('on', x === b));
@@ -426,17 +445,27 @@
 
   // pan / zoom (mouse + touch)
   const ptrs = new Map(); let pinch0 = null;
-  cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, [e.clientX, e.clientY]); cv.classList.add('dragging'); });
+  let panDrag = false;
+  cv.addEventListener('contextmenu', e => e.preventDefault());
+  cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, [e.clientX, e.clientY]); cv.classList.add('dragging');
+    panDrag = e.button === 1 || e.button === 2 || e.shiftKey; });
   cv.addEventListener('pointerup', e => { ptrs.delete(e.pointerId); pinch0 = null; if (!ptrs.size) cv.classList.remove('dragging'); });
   cv.addEventListener('pointercancel', e => { ptrs.delete(e.pointerId); pinch0 = null; });
   cv.addEventListener('pointermove', e => {
     if (!ptrs.has(e.pointerId)) { hover(e); return; }
     const prev = ptrs.get(e.pointerId); ptrs.set(e.pointerId, [e.clientX, e.clientY]);
-    if (ptrs.size === 1) {
-      st.ox += (e.clientX - prev[0]) * devicePixelRatio / st.scale; st.oy -= (e.clientY - prev[1]) * devicePixelRatio / st.scale; draw();
+    const dx = e.clientX - prev[0], dy = e.clientY - prev[1];
+    if (ptrs.size === 1 && panDrag) {
+      st.ox += dx * devicePixelRatio / st.scale; st.oy -= dy * devicePixelRatio / st.scale; draw();
+    } else if (ptrs.size === 1) {
+      st.yaw = (st.yaw + dx * 0.008 + 2 * Math.PI) % (2 * Math.PI);
+      st.pitch = Math.max(0, Math.min(Math.PI / 2, st.pitch + dy * 0.008));
+      document.querySelectorAll('#viewSeg button').forEach(x => x.classList.toggle('on', x.dataset.v === presetName()));
+      draw();
     } else if (ptrs.size === 2) {
       const [a, b] = [...ptrs.values()]; const d = Math.hypot(a[0]-b[0], a[1]-b[1]);
       if (pinch0) zoomAt((a[0]+b[0])/2, (a[1]+b[1])/2, d / pinch0);
+      st.ox += dx / 2 * devicePixelRatio / st.scale; st.oy -= dy / 2 * devicePixelRatio / st.scale;  // two fingers also pan
       pinch0 = d;
     }
   });
