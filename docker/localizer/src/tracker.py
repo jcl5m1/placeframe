@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from math import exp, pi, sqrt
+from threading import Lock
 from time import monotonic
 
 import numpy as np
@@ -199,12 +200,14 @@ class Tracker:
 class Sessions:
     def __init__(self) -> None:
         self._trackers: dict[tuple[str, str], Tracker] = {}
+        self._lock = Lock()  # requests for different sessions run on several threads
 
     def get(self, session_id: str, reconstruction_id: str) -> Tracker:
         now = monotonic()
-        for key in [k for k, t in self._trackers.items() if now - t.last_seen > SESSION_TTL_S]:
-            del self._trackers[key]
-        return self._trackers.setdefault((session_id, reconstruction_id), Tracker())
+        with self._lock:
+            for key in [k for k, t in self._trackers.items() if now - t.last_seen > SESSION_TTL_S]:
+                del self._trackers[key]
+            return self._trackers.setdefault((session_id, reconstruction_id), Tracker())
 
 
 def _correct_probability(confidence: float) -> float:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from asyncio import get_running_loop
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from os import environ
 from pathlib import Path
 from threading import Lock
@@ -42,6 +44,7 @@ CALIBRATION_GLOBAL_PATH = Path("/etc/placeframe/calibration/global.json")
 
 
 _executor = ThreadPoolExecutor(max_workers=2)
+_track_executor = ThreadPoolExecutor(max_workers=int(environ.get("LOCALIZER_TRACK_WORKERS", "2")))
 _load_lock = Lock()
 _load_state: dict[UUID, LoadState] = {}
 _load_error: dict[UUID, str] = {}
@@ -153,14 +156,20 @@ async def localize_tracked(
             _maps[id] = load_map(id, s3_client, settings.reconstructions_bucket, RECONSTRUCTIONS_DIR, data.metrics[id])
         tracker = _sessions.get(data.session_id, str(id))
         assert calibration is not None  # CODEGEN-guarded; runtime always has it
-        candidates = localize_candidates(
-            _maps[id],
-            data.camera_config,
-            image,
-            tracker.predicted_map_from_camera(odom_from_camera),
-            tracker.confident,
-            pipeline_version,
-            calibration,
+        # On a worker thread: one request's CPU work (decoding, pose estimation) overlaps another's GPU work, and
+        # the server keeps answering while a frame is processed.
+        candidates = await get_running_loop().run_in_executor(
+            _track_executor,
+            partial(
+                localize_candidates,
+                _maps[id],
+                data.camera_config,
+                image,
+                tracker.predicted_map_from_camera(odom_from_camera),
+                tracker.confident,
+                pipeline_version,
+                calibration,
+            ),
         )
         results.append((id, tracker, tracker.update(odom_from_camera, candidates), len(candidates)))
         print(
