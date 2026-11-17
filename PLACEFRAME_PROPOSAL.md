@@ -6,6 +6,26 @@ We run Placeframe self-hosted on one RTX 3090 workstation, mapping homes with an
 localizing phones against those maps. Our fork is based on `main` (May 2026); we have since compared it with
 `dev`, `dev_hh` and your open branches (Nov 17) so that we only propose what you don't already have.
 
+## Summary
+
+- **Two fixes for large builds:** restart the reconstructor process after each job (a long-lived worker kept
+  ~8 GB of host memory, which caused our out-of-memory kills), and limit progress output (one build printed
+  ~209,000 log lines).
+- **Builds 3–6× faster, and linear in size:** a prior-pose mapper and GPU bundle adjustment build an 8,370-image,
+  three-recording house map in 35 min. Half-precision descriptors cut a 9,072-image build's peak RAM from 18 GB to
+  11.9 GiB with the same map quality, so a ~20,000-image venue should fit one 32 GB machine.
+- **Merges must follow odometry heading drift:** one rigid transform left part of a house as a second copy rotated
+  32°. A piecewise alignment raised the map points shared with the existing map from 15% to 70%, and cut confidently
+  wrong phone fixes from 31 to 6 of 286.
+- **Tracking a moving phone on the server:** a per-session multi-hypothesis tracker over ARCore/ARKit odometry
+  serves a pose within 0.5 m on 274–278 of 286 recorded frames. This differs from your client-side design, and we
+  would value your view.
+- **Cost:** a 10,000 m² venue map builds in ~1.3 h on one RTX 3090. Serving 3,000 attendees costs ~$28 per event
+  day on marketplace GPUs with adaptive querying, which sends 4× fewer queries than 1 Hz at the same accuracy. Map
+  egress between clouds can cost more than the GPUs.
+- **What we ask:** which parts you want as pull requests, against which branch, and the GitHub usernames to give
+  access to our private repositories (questions at the end).
+
 ## What it looks like
 
 **The map.** A three-storey house (Fairhills Ct) built from three Insta360 X5 walks merged into one map (8,370
