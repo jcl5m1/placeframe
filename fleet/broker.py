@@ -18,11 +18,13 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import re
 import shlex
 import subprocess
 import sys
+import tarfile
 import time
 from pathlib import Path
 
@@ -34,6 +36,8 @@ BROKER = FLEET / "broker"
 LOG = FLEET / "access_log.jsonl"
 STATE = BROKER / "dispatches.json"
 PAYLOAD_KEY = "payload/worker_env-7c55.tar.zst"
+OVERLAY_KEY = ""  # set by _publish_code
+PLACEFRAME = Path.home() / "github/placeframe"
 OFFER_QUERY = "reliability>0.98 num_gpus=1 gpu_ram>=20 inet_down>=1000 disk_space>=40 cuda_vers>=12.8 rentable=true"
 LOST = {"exited", "offline", "stopped", "unknown", "dead"}
 PROVIDER = "vast"
@@ -164,7 +168,8 @@ def _dispatch(a, s3, bucket, code_key, state, rid, job) -> None:
     ticket_key = f"{prefix}/tickets/{dispatch}.json"
     s3.put_object(Bucket=bucket, Key=ticket_key, Body=json.dumps(ticket).encode())
     urls = {name: _presign(s3, bucket, "get_object", key, exp, dispatch)
-            for name, key in (("ticket", ticket_key), ("env", PAYLOAD_KEY), ("code", code_key))}
+            for name, key in (("ticket", ticket_key), ("env", PAYLOAD_KEY), ("code", code_key),
+                              ("overlay", OVERLAY_KEY))}
     inst = _launch(a, dispatch, _start_script(urls))
     if inst is None:
         d["status"] = "waiting_for_offer"
@@ -183,6 +188,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq >/dev/null && apt-get install -y -qq curl zstd ca-certificates >/dev/null && log apt done
 curl -sS --fail {q['env']} | zstd -dq -T0 | tar -x -C / && log environment ready
 curl -sS --fail -o /tmp/remote_worker.py {q['code']} && log worker code ready
+curl -sS --fail {q['overlay']} | tar -x -C / && log reconstructor patches applied
 export LD_LIBRARY_PATH=/opt/pf_syslibs TORCH_HOME=/opt/torch_cache PYTHONUNBUFFERED=1
 /opt/uv/venv/bin/python /tmp/remote_worker.py {q['ticket']}; log worker exited $?
 sleep infinity"""
@@ -251,10 +257,30 @@ def _presign(s3, bucket: str, method: str, key: str, expires: int, dispatch: str
 
 
 def _publish_code(s3, bucket: str) -> str:
+    global OVERLAY_KEY
     code = (Path(__file__).resolve().parent / "remote_worker.py").read_bytes()
     key = f"code/remote_worker-{hashlib.sha256(code).hexdigest()[:12]}.py"
     s3.put_object(Bucket=bucket, Key=key, Body=code)
+    overlay = _overlay_tar()
+    OVERLAY_KEY = f"code/overlay-{hashlib.sha256(overlay).hexdigest()[:12]}.tar"
+    s3.put_object(Bucket=bucket, Key=OVERLAY_KEY, Body=overlay)
+    log("code_published", worker=key, overlay=OVERLAY_KEY)
     return key
+
+
+def _overlay_tar() -> bytes:
+    """The source files the home reconstructor mounts over its image (compose.local.yml, reconstructor-cuda), as a
+    tar of their in-image paths, so a rented worker runs the same code as the home one, not the payload's copies."""
+    compose = (PLACEFRAME / "compose.local.yml").read_text()
+    block = re.search(r"^  reconstructor-cuda:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)", compose, re.S | re.M)
+    mounts = re.findall(r"^\s*-\s*\./(\S+?\.py):(/opt/\S+?\.py)", block.group(1) if block else "", re.M)
+    if not mounts:
+        raise SystemExit("no reconstructor source mounts found in compose.local.yml")
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
+        for src, dst in mounts:
+            tar.add(PLACEFRAME / src, arcname=dst.lstrip("/"))
+    return buf.getvalue()
 
 
 def _vast(args: list[str]) -> str:

@@ -16,6 +16,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import subprocess
 import sys
 import tarfile
 import threading
@@ -35,6 +36,7 @@ def main() -> None:
     WORK.mkdir(parents=True, exist_ok=True)
     RESULTS.mkdir(parents=True, exist_ok=True)
     status = Status(ticket["put"]["status"], ticket["dispatch"])
+    Memory(status)
     status.update(state="starting", phase="downloading")
     try:
         metrics = run(ticket, status)
@@ -132,6 +134,36 @@ class Status:
         while True:
             time.sleep(STATUS_EVERY_S)
             self.update(force=True)
+
+
+class Memory:
+    """Peak memory for the cost study, reported with every status update: this process's peak RSS (VmHWM, exact),
+    and host RAM in use and GPU memory in use (sampled every 5 s; they include anything else on the host)."""
+
+    def __init__(self, status: "Status") -> None:
+        self.status = status
+        self.host_peak = self.gpu_peak = 0.0
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self) -> None:
+        while True:
+            try:
+                info = dict(line.split(":", 1) for line in Path("/proc/meminfo").read_text().splitlines())
+                kib = lambda k: float(info[k].split()[0])  # noqa: E731
+                self.host_peak = max(self.host_peak, (kib("MemTotal") - kib("MemAvailable")) / 2**20)
+                proc = dict(line.split(":", 1) for line in Path("/proc/self/status").read_text().splitlines())
+                gpu = subprocess.run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
+                                     capture_output=True, text=True, timeout=10).stdout.split()
+                if gpu and gpu[0].replace(".", "", 1).isdigit():
+                    self.gpu_peak = max(self.gpu_peak, float(gpu[0]) / 1024)
+                self.status.update(memory={
+                    "process_peak_rss_gib": round(float(proc["VmHWM"].split()[0]) / 2**20, 2),
+                    "process_rss_gib": round(float(proc["VmRSS"].split()[0]) / 2**20, 2),
+                    "host_used_peak_gib": round(self.host_peak, 2), "host_total_gib": round(kib("MemTotal") / 2**20, 1),
+                    "gpu_used_peak_gib": round(self.gpu_peak, 2)})
+            except Exception as e:  # noqa: BLE001 - memory reporting must never stop a build
+                print(f"[remote] memory sample failed: {e}", flush=True)
+            time.sleep(5)
 
 
 def _get(url: str) -> bytes:
