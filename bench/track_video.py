@@ -2,7 +2,7 @@
 map slice, the path registered to the map, the localizations that agreed, and the status line.
 
   python bench/track_video.py REPLAY_DIR CANDIDATES.jsonl POINTS3D.txt ~/pf_data/videos/<folder>/<name>.mp4
-        [--steps 2] [--speed 2]
+        [--speed 5] [--fps 15]
 Videos under ~/pf_data/videos appear in the dashboard's "Generated videos" page (a <name>.txt beside one is its
 description). The tracker is the current tracker.py run over the saved candidates.
 
@@ -12,7 +12,9 @@ The top-down view:
   * places every path point with the first confident map alignment after it that was known at that moment, so when
     the tracker recovers from drift the path before the recovery snaps back onto the map; the path breaks only at
     odometry jumps and where it leaves the height slice (another floor);
-  * shows, between localizations (--steps - 1 frames per interval), the pose carried by odometry alone.
+  * moves the phone on every rendered frame: the pose at the frame's moment of the walk, interpolated between the
+    recorded odometry poses (not across an odometry jump); the camera image and the tracker state are the latest
+    localization's.
 """
 import argparse
 import json
@@ -41,8 +43,8 @@ def main():
     ap.add_argument("candidates")
     ap.add_argument("points", type=Path)
     ap.add_argument("out")
-    ap.add_argument("--steps", type=int, default=2, help="rendered frames per localization interval (1 = no odometry frames)")
-    ap.add_argument("--speed", type=float, default=2.0, help="playback speed relative to the recording")
+    ap.add_argument("--speed", type=float, default=5.0, help="playback speed relative to the recording")
+    ap.add_argument("--fps", type=float, default=15.0, help="video frame rate")
     a = ap.parse_args()
     session = json.loads((a.replay / "session.json").read_text())
     frames = [json.loads(line) for line in (a.replay / a.candidates).open()]
@@ -61,25 +63,26 @@ def main():
     jumps = {i for i in range(1, len(odom)) if odometry_jump(odom[i - 1], odom[i], times[i] - times[i - 1])}
 
     tmp = Path(tempfile.mkdtemp())
-    n = 0
-    for i in range(len(frames)):
-        for k in range(a.steps):
-            if k and i + 1 >= len(frames):
-                break
-            w = k / a.steps
-            pose = interpolate(odom[i], odom[i + 1], w) if k else odom[i]
-            img = Image.new("RGB", (W, H), (14, 16, 20))
+    n_out = int((times[-1] - times[0]) / a.speed * a.fps) + 1
+    i, cam = 0, None
+    for n in range(n_out):
+        t = times[0] + n * a.speed / a.fps  # this frame's moment of the walk
+        while i + 1 < len(frames) and times[i + 1] <= t:
+            i, cam = i + 1, None
+        between = i + 1 < len(frames) and t > times[i]
+        w = (t - times[i]) / (times[i + 1] - times[i]) if between else 0.0
+        pose = interpolate(odom[i], odom[i + 1], w) if between and i + 1 not in jumps else odom[i]
+        if cam is None:
             cam = Image.open(a.replay / "img" / session[i]["image"]).rotate(-90, expand=True)  # RIGHT_TOP: upright
             cam.thumbnail((LEFT, H))
-            img.paste(cam, ((LEFT - cam.width) // 2, (H - cam.height) // 2))
-            draw_top_down(img, map_display, display_from_map, track, odom, jumps, i, pose)
-            status(img, track[i], i, len(frames), k, font, small)
-            img.save(tmp / f"{n:05d}.png")
-            n += 1
-    fps = a.steps * a.speed * (len(frames) - 1) / (times[-1] - times[0])
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-framerate", f"{fps:.3f}", "-i", str(tmp / "%05d.png"), "-c:v", "libx264",
+        img = Image.new("RGB", (W, H), (14, 16, 20))
+        img.paste(cam, ((LEFT - cam.width) // 2, (H - cam.height) // 2))
+        draw_top_down(img, map_display, display_from_map, track, odom, jumps, i, pose)
+        status(img, track[i], i, len(frames), w > 0, font, small)
+        img.save(tmp / f"{n:05d}.png")
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-framerate", f"{a.fps:g}", "-i", str(tmp / "%05d.png"), "-c:v", "libx264",
                     "-pix_fmt", "yuv420p", "-crf", "20", "-movflags", "+faststart", a.out], check=True)
-    print(f"wrote {a.out}: {n} frames at {fps:.2f} fps ({a.speed:g}x the recording)")
+    print(f"wrote {a.out}: {n_out} frames at {a.fps:g} fps ({a.speed:g}x the recording)")
 
 
 def run_tracker(frames, odom, times) -> list[dict]:
@@ -203,7 +206,7 @@ def status(img, st, i, n, k, font, small):
     d.rectangle([0, 0, W, 64], fill=(0, 0, 0))
     p = st["p"]
     if k:
-        line = f"Between localizations: odometry pose · {100 * p:.0f}%"
+        line = f"Odometry since the last localization · {100 * p:.0f}%"
     else:
         line = f"Localized · {100 * p:.0f}%" if st["confident"] else (f"Localizing… {100 * p:.0f}%" if st["A"] is not None else "Not localized")
     d.text((16, 8), line, font=font, fill=(105, 240, 174) if st["confident"] and not k else (255, 255, 255))
