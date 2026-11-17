@@ -36,8 +36,10 @@ localizing phones against those maps. Our fork is based on `main` (May 2026); we
 | Half-precision descriptors in the reconstructor | [#163](https://github.com/outernet-foundation/placeframe/issues/163) | [#166](https://github.com/outernet-foundation/placeframe/pull/166) |
 | Larger changes: which do you want, in what form? | [#167](https://github.com/outernet-foundation/placeframe/issues/167) | after your answer |
 | Insta360 X5 capture source, with OpenVIO odometry | [placeframe-capture-tool#22](https://github.com/outernet-foundation/placeframe-capture-tool/issues/22) | after your answer |
+| Flutter phone app for capture and localization (phone only) | [placeframe-capture-tool#23](https://github.com/outernet-foundation/placeframe-capture-tool/issues/23) | [placeframe-capture-tool#24](https://github.com/outernet-foundation/placeframe-capture-tool/pull/24) (against its `dev`) |
 
-The three pull requests are independent: they merge in any order.
+The three Placeframe pull requests are independent: they merge in any order. The Flutter app goes to
+`placeframe-capture-tool`, beside CaptureTool; tell us if you prefer a separate repository.
 
 ## What it looks like
 
@@ -137,8 +139,7 @@ Outside Placeframe (separate repository; happy to share): the Insta360 X5 pipeli
 merging, GPS; proposed as a capture source in
 [placeframe-capture-tool#22](https://github.com/outernet-foundation/placeframe-capture-tool/issues/22), with an
 odometry comparison: OpenVIO, with its native two-lens 360° camera model, had 0.82 m median error against the
-map, better than OpenVINS and our own VIO at 1.53 m), a credential-free GPU fleet on rented interruptible GPUs (pre-signed object-storage URLs), a
-Flutter client for Android/iOS without Unity, a cost study (build compute, serving load, storage) and operations
+map, better than OpenVINS and our own VIO at 1.53 m), a credential-free GPU fleet on rented interruptible GPUs (pre-signed object-storage URLs), a cost study (build compute, serving load, storage) and operations
 tooling (dashboard, watchdog, backups, nightly localization regression checks).
 
 ## Where to look
@@ -179,3 +180,14 @@ meant for upstream.
 4. Server-side or client-side tracking: would you like the tracker and its evaluation tools as a reference, or
    ported to your client filter's interface?
 5. Should GPU bundle adjustment come back as an option for large captures, given the numbers above?
+6. Would you like any of our web tools? We checked `dev_hh`'s dashboard (#155) first: it already starts and follows
+   reconstructions, has an interactive 3D point-cloud viewer with camera poses, and batch-localizes image folders,
+   so we would not send those parts. What it does not have, and we could send:
+   - **Upload of large recordings in the browser**, resumable after a dropped connection, with the build queue.
+   - **Machine and build health:** GPU, CPU, memory and disk use; build progress with stall detection; a watchdog
+     that restarts stuck services and shows the problems it cannot fix in a banner; and rented-GPU costs.
+   - **Replay of recorded phone localization sessions** in a top-down map viewer (height slices, walk paths, the
+     localizations along a session's timeline).
+   - **Shareable reports** with comments anyone with the link can pin on the page (like this one).
+
+   Our tools are a separate web service with its own login today; tell us if any of them would fit your dashboard.
