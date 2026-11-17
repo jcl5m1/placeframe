@@ -65,8 +65,8 @@
 </head>
 <body>
 <main>
-  <h1 style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap">Add recordings to a map
-    <span id="pageNav" style="font-size:13px;font-weight:400;min-width:220px"></span></h1>
+  <div id="hdr"></div>
+  <h1>Add recordings to a map</h1>
   <p class="sub">Upload raw Insta360 <code>.insv</code> recordings of a place that is already mapped. Each one is registered into the
     map and a new, fused map is built. Uploads resume automatically — if the connection drops or you close the page,
     pick the same file again and it continues where it stopped.</p>
@@ -183,7 +183,7 @@ function selectMap(id) {
   $('map').value = id;
   $('map').dispatchEvent(new Event('change'));
 }
-PfUI.pageNav($('pageNav'), 'dashboard');
+PfUI.header($('hdr'), 'dashboard', { title: 'Mapper' });
 const newMapMode = () => document.querySelector('input[name=target]:checked').value === 'new';
 document.querySelectorAll('input[name=target]').forEach(r => r.onchange = () => {
   const isNew = newMapMode();

@@ -14,4 +14,5 @@ dependencies = [
     "uvicorn>=0.54.0",
     "rosbags>=0.11.9",
     "matplotlib>=3.11.2",
+    "markdown>=3.11.3",
 ]

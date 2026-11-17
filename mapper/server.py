@@ -35,6 +35,7 @@ import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 
+
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 DATA = Path(os.environ.get("MAPPER_DATA", Path.home() / "pf_mapper"))
@@ -58,6 +59,7 @@ from upload_to_placeframe import saved_credentials  # noqa: E402
 
 import gps_placement  # noqa: E402
 
+from .project_pages import router as project_router  # noqa: E402
 from .telemetry import Telemetry  # noqa: E402
 
 CREDS = saved_credentials(REPO.parent / "placeframe")
@@ -753,6 +755,9 @@ async def videos_redirect():
 @app.get("/videos/")
 async def videos_page():
     return FileResponse(HERE / "static" / "videos.html", headers={"Cache-Control": "no-cache"})
+
+
+app.include_router(project_router)  # /placeframe/ home, visualizer, vendor, reports (mapper/project_pages.py)
 
 
 @app.get("/pf_ui.js")

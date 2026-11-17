@@ -31,17 +31,18 @@
 </head>
 <body>
 <main>
-  <h1>Generated videos <span id="pageNav" style="font-size:13px;font-weight:400;min-width:220px"></span></h1>
+  <div id="hdr"></div>
+  <h1>Generated videos</h1>
   <p class="sub" id="pageSub">Every video rendered so far under <code id="root">the scratch folder</code>, newest first.
     A <code>.txt</code> file with the same name next to a video is shown as its description.</p>
   <div class="bar"><input id="q" type="search" placeholder="Filter by name, folder or description…"></div>
   <div id="list" class="grid"></div>
 </main>
-<script src="../pf_ui.js"></script>
+<script src="/placeframe/pf_ui.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => PfUI.esc(String(s));
-PfUI.pageNav($('pageNav'), 'videos');
+PfUI.header($('hdr'), 'videos');
 
 const mb = n => n >= 1e9 ? (n / 1e9).toFixed(2) + ' GB' : (n / 1e6).toFixed(1) + ' MB';
 const when = t => new Date(t * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });

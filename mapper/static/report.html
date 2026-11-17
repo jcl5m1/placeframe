@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Placeframe · report</title>
+<link rel="stylesheet" href="/placeframe/vendor/recogito-text-4.3.7.css">
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --ink:#e7e9ee; --muted:#9aa1ad; --line:#272c36; --accent:#4cc2ff; --hl:rgba(255,214,90,.35); }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  .wrap { max-width:1280px; margin:0 auto; padding:16px 16px 60px; }
+  .top { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; margin-bottom:14px; }
+  .top h1 { font-size:24px; margin:0 0 4px; }
+  .when { color:var(--muted); font-size:13px; }
+  .share { background:#0f1218; color:var(--accent); border:1px solid var(--line); border-radius:6px; padding:6px 12px; font:inherit; font-size:13px; cursor:pointer; }
+  .layout { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:24px; }
+  @media (max-width:900px) { .layout { grid-template-columns:1fr; } }
+  article { background:#fbfaf7; color:#1b1c1f; border-radius:10px; padding:28px 34px; min-width:0; }
+  article h1, article h2, article h3 { line-height:1.25; } article h2 { margin-top:1.6em; border-bottom:1px solid #e3e1da; padding-bottom:4px; }
+  article table { border-collapse:collapse; margin:12px 0; font-size:14px; display:block; overflow-x:auto; }
+  article th, article td { border:1px solid #d9d6cc; padding:5px 9px; text-align:left; vertical-align:top; }
+  article th { background:#f0eee7; } article img { max-width:100%; } article code { background:#efede6; padding:1px 4px; border-radius:4px; font-size:13px; }
+  article a { color:#1f64b5; }
+  aside { position:sticky; top:12px; align-self:start; max-height:calc(100vh - 24px); overflow:auto; }
+  .hint { color:var(--muted); font-size:13px; margin:0 0 10px; }
+  .thread { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin-bottom:10px; font-size:13px; }
+  .thread.on { border-color:var(--accent); }
+  .quote { color:#ffd65a; border-left:3px solid #ffd65a; padding-left:8px; margin-bottom:6px; cursor:pointer; white-space:pre-wrap; }
+  .sec { color:var(--muted); font-size:12px; margin-bottom:4px; }
+  .c { margin:6px 0; } .c b { color:var(--ink); } .c .t { color:var(--muted); font-size:11px; margin-left:6px; }
+  .c p { margin:2px 0 0; white-space:pre-wrap; }
+  textarea, input { width:100%; background:#0f1218; color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:6px 8px; font:inherit; font-size:13px; }
+  textarea { min-height:64px; resize:vertical; margin-top:6px; }
+  .row { display:flex; gap:6px; margin-top:6px; } .row button { flex:none; }
+  button.p { background:var(--accent); color:#06121b; border:none; border-radius:6px; padding:6px 12px; font:inherit; font-size:13px; cursor:pointer; }
+  button.s { background:none; color:var(--muted); border:1px solid var(--line); border-radius:6px; padding:6px 10px; font:inherit; font-size:13px; cursor:pointer; }
+  .composer { background:var(--panel); border:1px solid var(--accent); border-radius:8px; padding:10px 12px; margin-bottom:12px; font-size:13px; }
+  .err { color:#ff6b6b; font-size:12px; margin-top:4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="hdr"></div>
+  <div class="top">
+    <div><h1 id="title">Loading…</h1><div class="when" id="when"></div></div>
+    <button class="share" id="share" type="button">Copy link</button>
+  </div>
+  <div class="layout">
+    <article id="doc"></article>
+    <aside>
+      <p class="hint">Select any text in the report to comment on it. No sign-in needed: your name is optional.</p>
+      <div id="composer"></div>
+      <div id="threads"></div>
+    </aside>
+  </div>
+</div>
+<script src="/placeframe/pf_ui.js"></script>
+<script src="/placeframe/vendor/recogito-text-4.3.7.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => PfUI.esc(String(s ?? ''));
+const when = s => s ? new Date(s).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '';
+const link = location.origin + location.pathname;
+const doc = $('doc');
+let anno, threads = [], current = null;
+
+$('share').addEventListener('click', () => {
+  const b = $('share');
+  const done = () => { b.textContent = 'Link copied'; setTimeout(() => b.textContent = 'Copy link', 2000); };
+  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(link).then(done, () => prompt('Link to this report:', link));
+  else prompt('Link to this report:', link);
+});
+
+fetch('data.json').then(r => r.ok ? r.json() : Promise.reject(r.status)).then(d => {
+  document.title = 'Placeframe · ' + d.title;
+  PfUI.header($('hdr'), 'reports', { title: d.title });
+  $('title').textContent = d.title;
+  $('when').textContent = `Published ${when(d.created)}` + (d.updated !== d.created ? ` · Updated ${when(d.updated)}` : '');
+  doc.innerHTML = d.html;
+  startAnnotator();
+  loadThreads();
+}).catch(e => { $('title').textContent = 'Report not found'; });
+
+function startAnnotator() {
+  const { createTextAnnotator, W3CTextFormat } = window.RecogitoText;
+  anno = createTextAnnotator(doc, {
+    adapter: W3CTextFormat(link, doc),
+    style: { fill: '#ffd65a', fillOpacity: 0.35 },
+  });
+  anno.on('createAnnotation', a => openComposer(a));
+  anno.on('clickAnnotation', a => focusThread(a.id, true));
+}
+
+function loadThreads() {
+  return fetch('comments').then(r => r.json()).then(d => {
+    threads = d.threads;
+    anno.setAnnotations(threads.map(t => t.target));
+    renderThreads();
+  });
+}
+
+// The heading of the section a selection starts in, so a comment also says where in the report it is.
+function sectionOf(a) {
+  const pos = selectors(a).find(s => s.type === 'TextPositionSelector');
+  let section = '';
+  if (!pos) return section;
+  const walker = document.createTreeWalker(doc, NodeFilter.SHOW_TEXT);
+  let offset = 0, node;
+  while ((node = walker.nextNode())) {
+    if (offset + node.length > pos.start) break;
+    offset += node.length;
+  }
+  for (const h of doc.querySelectorAll('h1,h2,h3,h4')) {
+    if (node && (h.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING)) section = h.textContent.trim();
+  }
+  return section;
+}
+
+// W3C annotations may have one target or a list of them; the selectors of the first are used.
+const selectors = a => [].concat((Array.isArray(a.target) ? a.target[0] : a.target)?.selector || []);
+const quoteOf = a => (selectors(a).find(s => s.type === 'TextQuoteSelector') || {}).exact || '';
+const author = () => localStorage.getItem('pf_comment_author') || '';
+
+function openComposer(a) {
+  $('composer').innerHTML = `<div class="composer"><div class="quote">${esc(quoteOf(a))}</div>
+    <input id="cAuthor" placeholder="Your name (optional)" value="${esc(author())}">
+    <textarea id="cBody" placeholder="Comment…"></textarea>
+    <div class="row"><button class="p" id="cSend" type="button">Comment</button><button class="s" id="cCancel" type="button">Cancel</button></div>
+    <div class="err" id="cErr"></div></div>`;
+  $('cBody').focus();
+  $('cCancel').onclick = () => { anno.removeAnnotation(a.id); $('composer').innerHTML = ''; };
+  $('cSend').onclick = () => {
+    const body = $('cBody').value.trim();
+    if (!body) return;
+    localStorage.setItem('pf_comment_author', $('cAuthor').value.trim());
+    post({ body, author: $('cAuthor').value.trim(), target: a, section: sectionOf(a) }).then(() => {
+      $('composer').innerHTML = '';
+      loadThreads().then(() => focusThread(a.id, false));
+    }).catch(e => { $('cErr').textContent = e; });
+  };
+}
+
+function post(payload) {
+  return fetch('comments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    .then(r => r.ok ? r.json() : r.json().then(j => Promise.reject(j.detail || r.status), () => Promise.reject(r.status)));
+}
+
+function renderThreads() {
+  const pos = t => (selectors(t.target).find(s => s.type === 'TextPositionSelector') || { start: 0 }).start;
+  const sorted = [...threads].sort((a, b) => pos(a) - pos(b));
+  $('threads').innerHTML = sorted.length ? sorted.map(t => `<div class="thread${t.thread === current ? ' on' : ''}" id="t-${esc(t.thread)}">
+      ${t.section ? `<div class="sec">${esc(t.section)}</div>` : ''}
+      <div class="quote" data-go="${esc(t.thread)}">${esc(t.quote.exact)}</div>
+      ${t.comments.map(c => `<div class="c"><b>${esc(c.author)}</b><span class="t">${esc(when(c.created))}</span><p>${esc(c.body)}</p></div>`).join('')}
+      <div class="row"><input placeholder="Reply…" data-reply="${esc(t.thread)}"><button class="s" type="button" data-send="${esc(t.thread)}">Reply</button></div>
+    </div>`).join('') : '<p class="hint">No comments yet.</p>';
+  $('threads').querySelectorAll('[data-go]').forEach(q => q.onclick = () => focusThread(q.dataset.go, true));
+  $('threads').querySelectorAll('[data-send]').forEach(b => b.onclick = () => {
+    const input = $('threads').querySelector(`[data-reply="${CSS.escape(b.dataset.send)}"]`);
+    const body = input.value.trim();
+    if (!body) return;
+    post({ body, author: author(), parent: b.dataset.send }).then(() => loadThreads().then(() => focusThread(b.dataset.send, false)));
+  });
+}
+
+function focusThread(id, scrollDoc) {
+  current = id;
+  renderThreads();
+  const el = document.getElementById('t-' + id);
+  if (el) el.scrollIntoView({ block: 'nearest' });
+  if (scrollDoc) anno.scrollIntoView(id);
+}
+</script>
+</body>
+</html>
