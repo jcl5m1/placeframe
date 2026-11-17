@@ -131,7 +131,8 @@ async def _localize(session: AsyncSession, data: LocalizationRequest, image: byt
         except ApiException as e:
             status = cast(int | None, e.status)
             if status == 422:
-                raise HTTPException(status_code=HTTP_422_UNPROCESSABLE_ENTITY) from e
+                # The localizer's reason (no matches, confidence below the gate, ...) tells clients why a frame failed.
+                raise HTTPException(status_code=HTTP_422_UNPROCESSABLE_ENTITY, detail=_localizer_detail(e)) from e
             raise HTTPException(status_code=HTTP_502_BAD_GATEWAY, detail="Localization session backend error") from e
 
 
@@ -187,3 +188,11 @@ router = Router(
     dependencies={"session": Provide(get_session)},
     route_handlers=[localize_image, get_localizer_version],
 )
+
+
+def _localizer_detail(e: ApiException) -> str:
+    try:
+        detail = json.loads(cast(str, e.body)).get("detail")
+    except (TypeError, ValueError, AttributeError):
+        return "Not localized"
+    return detail if isinstance(detail, str) else "Not localized"
