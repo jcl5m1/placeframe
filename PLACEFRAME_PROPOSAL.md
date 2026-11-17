@@ -66,6 +66,11 @@ localizing phones against those maps. Our fork is based on `main` (May 2026); we
 9. **Map placement from capture GPS** (`location.json`, placed in ENU at the fix) and **server-side recording of
    localization requests** for replay (complements your client-side recorder).
 
+A cost study (building and serving maps for a 10,000 m² venue with 3,000 attendees, measured on this pipeline) is in
+our pipeline repository: `cost/COST_STUDY.md`. In short: a venue map builds in ~1.3 h on one RTX 3090, and serving
+cost is dominated by how often phones query (adaptive querying: ~$32 per event day on marketplace GPUs) and by
+map egress when GPUs and storage sit in different clouds.
+
 Outside Placeframe (separate repository; happy to share): the Insta360 X5 pipeline (calibration, odometry,
 merging, GPS), a credential-free GPU fleet on rented interruptible GPUs (pre-signed object-storage URLs), a
 Flutter client for Android/iOS without Unity, a cost study (build compute, serving load, storage) and operations
@@ -85,10 +90,10 @@ request until you tell us which parts you want, and against which branch.
 | Extension 1: prior-pose mapper | [`356939cc`](https://github.com/jcl5m1/placeframe/commit/356939cc) |
 | Extension 2: merge registration and check | in our pipeline repository ([`a488978`](https://github.com/jcl5m1/placeframe-insta360/commit/a488978)) |
 | Extension 3: GPU bundle adjustment | worker image build in our pipeline repository (`gpu/`), no Placeframe code change |
-| Extension 4: tracked localization | [`549d0ef4`](https://github.com/jcl5m1/placeframe/commit/549d0ef4) (API, localizer, tracker, tests) |
+| Extension 4: tracked localization | [`549d0ef4`](https://github.com/jcl5m1/placeframe/commit/549d0ef4) (API, localizer, tracker, tests), worker threads [`f5251e25`](https://github.com/jcl5m1/placeframe/commit/f5251e25) |
 | Extension 6: query size parameter | [`683136a4`](https://github.com/jcl5m1/placeframe/commit/683136a4); adaptive rate in the app [`46d0838f`](https://github.com/jcl5m1/placeframe/commit/46d0838f) |
 | Extension 7: upright phone images | [`4b606387`](https://github.com/jcl5m1/placeframe/commit/4b606387) |
-| Extension 8: preemptible workers | [`4d7a7673`](https://github.com/jcl5m1/placeframe/commit/4d7a7673), [`2ba41ebf`](https://github.com/jcl5m1/placeframe/commit/2ba41ebf) |
+| Extension 8: preemptible workers | [`4d7a7673`](https://github.com/jcl5m1/placeframe/commit/4d7a7673), [`2ba41ebf`](https://github.com/jcl5m1/placeframe/commit/2ba41ebf), heartbeat fix [`f75eeac3`](https://github.com/jcl5m1/placeframe/commit/f75eeac3) |
 | Extension 9: GPS placement; request recording | [`ddc88e58`](https://github.com/jcl5m1/placeframe/commit/ddc88e58), [`1fb9ed32`](https://github.com/jcl5m1/placeframe/commit/1fb9ed32); [`50621a68`](https://github.com/jcl5m1/placeframe/commit/50621a68) |
 | Panoramic rig pairing | [`ba13a599`](https://github.com/jcl5m1/placeframe/commit/ba13a599) |
 | Flutter client | [`5cb59995`](https://github.com/jcl5m1/placeframe/commit/5cb59995), [`b94ec1eb`](https://github.com/jcl5m1/placeframe/commit/b94ec1eb), [`4b606387`](https://github.com/jcl5m1/placeframe/commit/4b606387), [`46d0838f`](https://github.com/jcl5m1/placeframe/commit/46d0838f) |
