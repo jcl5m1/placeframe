@@ -22,25 +22,26 @@ LOCAL_FEATURE_RESIZE_SHORTER_SIDE = 1024
 RETRIEVAL_TILE_OVERLAP_FRACTION = 0.5
 
 
-def canonicalize_image(image_buffer: bytes, orientation: ImageOrientation) -> PILImage.Image:
+def canonicalize_image(
+    image_buffer: bytes, orientation: ImageOrientation, shorter_side: int = LOCAL_FEATURE_RESIZE_SHORTER_SIDE
+) -> PILImage.Image:
     image = PILImage.open(BytesIO(image_buffer))
     image = _orient(image, orientation)
-    new_width, new_height = _resized_dimensions(image.width, image.height)
+    new_width, new_height = _resized_dimensions(image.width, image.height, shorter_side)
     if (new_width, new_height) != (image.width, image.height):
         image = image.resize((new_width, new_height), Resampling.LANCZOS)
     return image.convert("RGB")
 
 
-def canonicalize_intrinsics(camera: PinholeCameraConfig):
+def canonicalize_intrinsics(camera: PinholeCameraConfig, shorter_side: int = LOCAL_FEATURE_RESIZE_SHORTER_SIDE):
     width, height, fx, fy, cx, cy = _oriented_intrinsics(camera)
-    new_width, new_height = _resized_dimensions(width, height)
+    new_width, new_height = _resized_dimensions(width, height, shorter_side)
     scale_x = new_width / width
     scale_y = new_height / height
     return new_width, new_height, fx * scale_x, fy * scale_y, cx * scale_x, cy * scale_y
 
 
-def tile_image(image: PILImage.Image) -> list[PILImage.Image]:
-    side = LOCAL_FEATURE_RESIZE_SHORTER_SIDE
+def tile_image(image: PILImage.Image, side: int = LOCAL_FEATURE_RESIZE_SHORTER_SIDE) -> list[PILImage.Image]:
     width, height = image.width, image.height
     long_axis = max(width, height)
     if long_axis <= side:
@@ -58,8 +59,8 @@ def tile_image(image: PILImage.Image) -> list[PILImage.Image]:
     return tiles
 
 
-def _resized_dimensions(width: int, height: int) -> tuple[int, int]:
-    scale = LOCAL_FEATURE_RESIZE_SHORTER_SIDE / min(width, height)
+def _resized_dimensions(width: int, height: int, shorter_side: int) -> tuple[int, int]:
+    scale = shorter_side / min(width, height)
     return round(width * scale), round(height * scale)
 
 
