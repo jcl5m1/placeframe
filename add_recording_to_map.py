@@ -90,6 +90,7 @@ def main() -> None:
         marker.write_text(json.dumps({"seconds": round(time.time() - t0, 1)}))
         log(f"== DONE {name} ({time.time() - t0:.0f}s)")
 
+    forget_other_target(job, args.map)
     py = [sys.executable, "-u"]
     run_stage("calibrate", lambda: sh(py + [str(HERE / "insta360_dualfisheye_to_placeframe.py"), insv,
                                             "-o", str(job / "fisheye"), "--loop-closure"]))
@@ -120,6 +121,32 @@ def main() -> None:
     run_stage("geolocate", lambda: geolocate(api, job, insv))
     result = json.loads((job / "result.json").read_text())
     log(f"== COMPLETE new map {result['map_id']} '{result['name']}'")
+
+
+TARGET_STAGES = ("register", "merge", "reconstruct", "publish", "geolocate")
+TARGET_FILES = ("registration.json", "base_capture.tar", "merged.tar", "conversion.json", "reconstruct.json",
+                "result.json")
+
+
+def forget_other_target(job: Path, map_id: str | None) -> None:
+    """A job re-run against a different map (e.g. a group's newer map) must not reuse what was registered against,
+    downloaded from or merged into the previous one: the stale base capture once dropped a whole recording."""
+    target_file = job / "target_map.txt"
+    target = map_id or "new-map"
+    if target_file.exists() and target_file.read_text().strip() != target:
+        log(f"target changed {target_file.read_text().strip()} -> {target}: redoing registration, merge and build")
+        for stage in TARGET_STAGES:
+            (job / f".done-{stage}").unlink(missing_ok=True)
+        for name in TARGET_FILES:
+            (job / name).unlink(missing_ok=True)
+    elif not target_file.exists() and (job / "base_capture.tar").exists():
+        # Jobs from before the target was recorded: the cached base capture's map is unknown, so fetch it again.
+        log("base capture of unknown target: downloading it again")
+        for stage in ("merge", "reconstruct", "publish", "geolocate"):
+            (job / f".done-{stage}").unlink(missing_ok=True)
+        for name in ("base_capture.tar", "merged.tar", "reconstruct.json"):
+            (job / name).unlink(missing_ok=True)
+    target_file.write_text(target)
 
 
 # --------------------------------------------------------------------------- stages
@@ -196,7 +223,10 @@ def register(api: PlaceframeApi, job: Path, map_id: str, n_frames: int) -> None:
     frames = [r.split(",") for r in rows]
     cam_cfg = manifest["rigs"][0]["cameras"][0]["camera_config"]
     views = parse_views(None, len(manifest["rigs"][0]["cameras"]), 0.0)
-    picks = [frames[i] for i in np.linspace(0, len(frames) - 1, min(n_frames, len(frames))).astype(int)]
+    # At least n_frames, and one every ~5 s of a long recording, so heading drift is sampled densely enough.
+    duration_s = (int(frames[-1][0]) - int(frames[0][0])) / 1000
+    n = min(len(frames), max(n_frames, int(duration_s / 5)))
+    picks = [frames[i] for i in np.linspace(0, len(frames) - 1, n).astype(int)]
     pairs = []
     for f in picks:
         ts = f[0]
@@ -226,46 +256,65 @@ def register(api: PlaceframeApi, job: Path, map_id: str, n_frames: int) -> None:
     if len(pairs) < 4:
         raise SystemExit(f"Registration failed: only {len(pairs)} frames localized. Does the recording overlap the map?")
 
-    best_inl, best_R = None, None
-    for p in pairs:  # one correspondence fixes a rigid hypothesis (rotation + position)
-        R = p["R_map"] @ p["R_new"].T
-        t = p["C_map"] - R @ p["C_new"]
-        # Thresholds sized to OpenVIO's open-loop drift on the X5 (~1-1.5 m, a few degrees of yaw).
-        inl = [q for q in pairs if np.linalg.norm(R @ q["C_new"] + t - q["C_map"]) < 1.5
-               and np.degrees(Rotation.from_matrix((R @ q["R_new"]).T @ q["R_map"]).magnitude()) < 12]
-        if best_inl is None or len(inl) > len(best_inl):
-            best_inl, best_R = inl, R
-    A = np.array([q["C_new"] for q in best_inl])
-    B = np.array([q["C_map"] for q in best_inl])
-    if len(best_inl) >= 3 and np.ptp(A, axis=0).max() > 1.0:
-        ma, mb = A.mean(0), B.mean(0)
-        U, _, Vt = np.linalg.svd((B - mb).T @ (A - ma))
-        R = U @ np.diag([1, 1, np.sign(np.linalg.det(U @ Vt))]) @ Vt
-    else:
-        R, ma, mb = best_R, A.mean(0), B.mean(0)
-    t = mb - R @ ma
-    res = np.linalg.norm((A @ R.T + t) - B, axis=1)
-    if len(best_inl) < 4:
-        raise SystemExit(f"Registration failed: only {len(best_inl)} consistent localizations out of {len(pairs)}")
-    # Residual drift at each consistent localization becomes a time-interpolated position correction
-    # (loop closure against the existing map) applied on top of the rigid transform.
-    knots = sorted((q["ts"], (q["C_map"] - (R @ q["C_new"] + t)).tolist()) for q in best_inl)
-    out = {"R": R.tolist(), "t": t.tolist(), "inliers": len(best_inl), "localized": len(pairs),
-           "sampled": len(picks), "rms_m": float(np.sqrt(np.mean(res ** 2))), "max_m": float(res.max()),
-           "drift_knots": knots}
+    # Each localization implies its own map_from_new alignment; the recording's odometry drifts (metres, and tens of
+    # degrees of heading over a long walk), so one rigid transform cannot fit them all. Keep localizations whose
+    # alignment agrees with their neighbours in time, and interpolate between them (rotation and position).
+    for p in pairs:
+        p["R_align"] = p["R_map"] @ p["R_new"].T
+        p["t_align"] = p["C_map"] - p["R_align"] @ p["C_new"]
+    pairs.sort(key=lambda p: p["ts"])
+    kept = [p for i, p in enumerate(pairs) if _neighbour_support(pairs, i) >= 2]
+    if len(kept) < 4:
+        raise SystemExit(f"Registration failed: only {len(kept)} consistent localizations out of {len(pairs)}")
+    res = []
+    for i, p in enumerate(kept):  # leave-one-out: how well its neighbours predict each kept localization
+        others = kept[:i] + kept[i + 1:]
+        R_i, t_i = _interpolate_alignment(others, p["ts"])
+        res.append(np.linalg.norm(R_i @ p["C_new"] + t_i - p["C_map"]))
+    res = np.array(res)
+    yaw = [np.degrees(Rotation.from_matrix(p["R_align"] @ kept[0]["R_align"].T).magnitude()) for p in kept]
+    knots = [{"ts": p["ts"], "R": p["R_align"].tolist(), "t": p["t_align"].tolist()} for p in kept]
+    out = {"knots": knots, "inliers": len(kept), "localized": len(pairs), "sampled": len(picks),
+           "rms_m": float(np.sqrt(np.mean(res ** 2))), "max_m": float(res.max()), "rotation_drift_deg": float(max(yaw))}
     (job / "registration.json").write_text(json.dumps(out, indent=2))
     log(f"registered: {out['inliers']}/{out['localized']} consistent localizations "
-        f"(of {out['sampled']} sampled), residual rms {out['rms_m']:.2f} m, max {out['max_m']:.2f} m")
+        f"(of {out['sampled']} sampled), leave-one-out residual rms {out['rms_m']:.2f} m, max {out['max_m']:.2f} m, "
+        f"alignment rotates by up to {out['rotation_drift_deg']:.0f}° along the recording")
+
+
+def _neighbour_support(pairs: list[dict], i: int, window: int = 3) -> int:
+    """How many of the nearest localizations in time (±window) imply the same alignment as pairs[i], compared at
+    its own position (they drift apart slowly)."""
+    p = pairs[i]
+    n = 0
+    for q in pairs[max(0, i - window): i + window + 1]:
+        if q is p:
+            continue
+        dist = np.linalg.norm(q["R_align"] @ p["C_new"] + q["t_align"] - p["C_map"])
+        ang = np.degrees(Rotation.from_matrix(q["R_align"] @ p["R_align"].T).magnitude())
+        n += dist < 1.0 and ang < 10
+    return n
+
+
+def _interpolate_alignment(knots: list[dict], ts: float) -> tuple[np.ndarray, np.ndarray]:
+    """map_from_new at time ts: the knots' alignments interpolated (slerp rotation, linear translation); held
+    constant before the first and after the last knot. Knots are dicts with ts, R_align/R and t_align/t."""
+    times = np.array([k["ts"] for k in knots], float)
+    Rs = [np.array(k.get("R_align", k.get("R"))) for k in knots]
+    ts_ = [np.array(k.get("t_align", k.get("t"))) for k in knots]
+    if ts <= times[0]:
+        return Rs[0], ts_[0]
+    if ts >= times[-1]:
+        return Rs[-1], ts_[-1]
+    j = int(np.searchsorted(times, ts))
+    w = (ts - times[j - 1]) / (times[j] - times[j - 1])
+    rel = Rotation.from_matrix(Rs[j] @ Rs[j - 1].T).as_rotvec()
+    R = Rotation.from_rotvec(rel * w).as_matrix() @ Rs[j - 1]
+    return R, (1 - w) * ts_[j - 1] + w * ts_[j]
 
 
 def merge(api: PlaceframeApi, job: Path, map_id: str) -> None:
-    reg = json.loads((job / "registration.json").read_text())
-    R, t = np.array(reg["R"]), np.array(reg["t"])
-    kt = np.array([k[0] for k in reg["drift_knots"]], float)
-    kv = np.array([k[1] for k in reg["drift_knots"]], float)
-
-    def drift_at(ts_ms: int) -> np.ndarray:
-        return np.array([np.interp(ts_ms, kt, kv[:, j]) for j in range(3)])
+    knots = json.loads((job / "registration.json").read_text())["knots"]
 
     lm = api.get(f"/localization-maps/{map_id}")
     rec = api.get(f"/reconstructions/{lm['reconstruction_id']}")
@@ -316,7 +365,8 @@ def merge(api: PlaceframeApi, job: Path, map_id: str) -> None:
                     body = []
                     for line in lines[1:]:
                         f = line.split(",")
-                        C = R @ np.array([float(x) for x in f[1:4]]) + t + drift_at(int(f[0]))
+                        R, t = _interpolate_alignment(knots, int(f[0]))
+                        C = R @ np.array([float(x) for x in f[1:4]]) + t
                         q = Rotation.from_matrix(R @ Rotation.from_quat([float(x) for x in f[4:8]]).as_matrix()).as_quat()
                         body.append(f"{f[0]},{C[0]:.6f},{C[1]:.6f},{C[2]:.6f},{q[0]:.8f},{q[1]:.8f},{q[2]:.8f},{q[3]:.8f}")
                     data = ("\n".join([lines[0]] + body) + "\n").encode()
@@ -417,6 +467,16 @@ def publish(api: PlaceframeApi, job: Path, map_id: str | None, replace: bool) ->
         "position_x": 0.0, "position_y": 0.0, "position_z": 0.0, "rotation_x": 0.0, "rotation_y": 0.0,
         "rotation_z": 0.0, "rotation_w": 1.0, "color": 0}
     replace = replace and bool(map_id)
+    shared = merge_connectivity(st["reconstruction_id"]) if map_id else None
+    if shared is not None:
+        log(f"merge connectivity: {100 * shared:.0f}% of the new recording's map points are also seen by the "
+            f"existing map (a well-joined merge: ~50%)")
+        if shared < MIN_MERGE_CONNECTIVITY:
+            msg = (f"merge poorly joined: only {100 * shared:.0f}% of the new recording's points are shared with the "
+                   f"existing map, so parts of it may sit beside the map as a misaligned copy")
+            log(f"WARNING {msg}; the old map stays active")
+            report_incident("merge-poorly-joined", f"{st['name']}: {msg}", job)
+            replace = False
     try:
         new_map_id = api.get(f"/reconstructions/{st['reconstruction_id']}/localization_map")
     except httpx.HTTPStatusError:
@@ -435,6 +495,41 @@ def publish(api: PlaceframeApi, job: Path, map_id: str | None, replace: bool) ->
               "points": metrics.get("num_3d_points"), "replaced": replace, "old_map": map_id}
     (job / "result.json").write_text(json.dumps(result, indent=2))
     log(f"published map {new_map_id}: {result['registered_images']}/{result['total_images']} images, {result['points']} points")
+
+
+MIN_MERGE_CONNECTIVITY = 0.3
+
+
+def merge_connectivity(reconstruction_id: str) -> float | None:
+    """Fraction of the newest rig's 3D points that older rigs also observe. A merge whose recording was registered
+    well shares about half its points with the map (Fairhills first merge: 54%); one registered with a heading
+    error builds a rotated copy beside the map and shares few (15%), and localization then lands on either copy."""
+    def cat(name: str) -> str:
+        return subprocess.run(["sg", "docker", "-c", f"docker exec placeframe-minio-1 mc cat "
+                               f"l/dev-reconstructions/{reconstruction_id}/sfm_model/{name}"],
+                              capture_output=True, text=True).stdout
+    rig = {int(f[0]): f[9].split("/")[0] for f in
+           (ln.split() for ln in [ln for ln in cat("images.txt").splitlines() if ln and not ln.startswith("#")][0::2])}
+    if len(set(rig.values())) < 2:
+        return None
+    newest = max(set(rig.values()), key=lambda r: int(r[3:]))
+    seen = shared = 0
+    for line in cat("points3D.txt").splitlines():
+        if not line or line.startswith("#"):
+            continue
+        rigs = {rig.get(int(i)) for i in line.split()[8::2]}
+        if newest in rigs:
+            seen += 1
+            shared += len(rigs) > 1
+    return shared / seen if seen else None
+
+
+def report_incident(kind: str, summary: str, job: Path) -> None:
+    """Shown in the mapper dashboard's problems banner (it reads the watchdog's unresolved incidents)."""
+    rec = {"ts": time.strftime("%Y-%m-%d %H:%M:%S"), "kind": kind, "summary": summary, "status": "needs_attention",
+           "evidence": f"job {job}"}
+    with (Path.home() / "pf_watchdog" / "incidents.jsonl").open("a") as f:
+        f.write(json.dumps(rec) + "\n")
 
 
 # --------------------------------------------------------------------------- helpers
