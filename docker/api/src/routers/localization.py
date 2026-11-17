@@ -1,6 +1,7 @@
 import json
 import os
 import time
+import zlib
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, cast
@@ -180,7 +181,7 @@ async def localize_tracked(
             select(Reconstruction.id, Reconstruction.manifest).where(Reconstruction.id.in_(maps.keys()))
         )
     ).all()
-    async with httpx.AsyncClient(base_url=str(settings.localizer_container_url), timeout=60) as client:
+    async with httpx.AsyncClient(base_url=_tracking_localizer(data.session_id), timeout=60) as client:
         response = await client.post(
             "/localization/track",
             data={
@@ -220,6 +221,17 @@ async def localize_tracked(
     )
     _record_tracked(request, data, image, received_at, started, result, 201)
     return result
+
+
+# Localizer processes for tracked sessions. A session's tracker state lives in one process, so each session always goes
+# to the same one (by a hash of its id); several processes use a GPU more fully than one.
+TRACK_URLS = [u.strip() for u in os.environ.get("LOCALIZER_TRACK_URLS", "").split(",") if u.strip()]
+
+
+def _tracking_localizer(session_id: str) -> str:
+    if not TRACK_URLS:
+        return str(settings.localizer_container_url)
+    return TRACK_URLS[zlib.crc32(session_id.encode()) % len(TRACK_URLS)]
 
 
 def _record_tracked(
