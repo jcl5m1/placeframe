@@ -10,6 +10,7 @@ services:
   # Expose the gateway's plain-HTTP "tunnel mode" listener on loopback so Tailscale
   # Serve/Funnel can front it with a real *.ts.net HTTPS certificate (replaces ngrok).
   gateway:
+    restart: unless-stopped
     logging: *bounded-logs
     ports:
       - "127.0.0.1:58081:8080"
@@ -18,6 +19,7 @@ services:
   # digests pinned in .env.lock no longer resolve. Use Chainguard's free builds instead
   # (-dev variants include sh + wget, which the stock healthcheck/entrypoints need).
   minio:
+    restart: unless-stopped
     image: "cgr.dev/chainguard/minio@sha256:5735e8125c4af7dd310dc5780508bfb850f0b68783a1a56089b5c64316a8f603"
     user: "0:0"
     healthcheck:
@@ -25,6 +27,7 @@ services:
   initialize-minio:
     image: "cgr.dev/chainguard/minio-client@sha256:e1f3f37e8b13f34be49494f441ca01ff7be4e05d7cf04bf26681b0fe380852e1"
   minio-logger:
+    restart: unless-stopped
     image: "cgr.dev/chainguard/minio-client@sha256:e1f3f37e8b13f34be49494f441ca01ff7be4e05d7cf04bf26681b0fe380852e1"
 
   # Tailscale Serve only answers connections arriving via tailscale0 or from the host itself, so
@@ -37,6 +40,7 @@ services:
     restart: unless-stopped
     command: "TCP-LISTEN:443,bind=172.17.0.1,fork,reuseaddr TCP:100.87.240.10:443"
   api:
+    restart: unless-stopped
     logging: *bounded-logs
     extra_hosts: ["${PUBLIC_DOMAIN:?err}:172.17.0.1"]
     # Local patch: record every /localize request (image, parameters, response, latency) for replay —
@@ -91,6 +95,7 @@ services:
       - ./packages/python/core/src/core/opq.py:/opt/uv/venv/lib/python3.13/site-packages/core/opq.py:ro
       - ./packages/python/core/src/core/lightglue.py:/opt/uv/venv/lib/python3.13/site-packages/core/lightglue.py:ro
   localizer-cuda:
+    restart: unless-stopped
     logging: *bounded-logs
     extra_hosts: ["${PUBLIC_DOMAIN:?err}:172.17.0.1"]
     environment:
@@ -109,8 +114,10 @@ services:
       #  image_preprocess.py — query resize size as a parameter (default unchanged), so tracked queries use 640.
       - ./packages/python/core/src/core/image_preprocess.py:/opt/uv/venv/lib/python3.13/site-packages/core/image_preprocess.py:ro
   grafana:
+    restart: unless-stopped
     extra_hosts: ["${PUBLIC_DOMAIN:?err}:172.17.0.1"]
   state-sync:
+    restart: unless-stopped
     extra_hosts: ["${PUBLIC_DOMAIN:?err}:172.17.0.1"]
 
   # Filters public (Funnel) traffic before it reaches the gateway: admin UIs (Keycloak admin,
@@ -123,3 +130,17 @@ services:
     restart: unless-stopped
     volumes:
       - ./docker/funnel-filter/Caddyfile:/etc/caddy/Caddyfile:ro
+
+  # Long-running services start with Docker after a reboot (restart: unless-stopped, also set on the services above);
+  # one-shot initializers stay as they are, and the home reconstructor keeps on-failure because the watchdog stops it
+  # on purpose while rented GPUs serve the queue.
+  alloy:
+    restart: unless-stopped
+  cloudbeaver:
+    restart: unless-stopped
+  keycloak:
+    restart: unless-stopped
+  loki:
+    restart: unless-stopped
+  postgres:
+    restart: unless-stopped
