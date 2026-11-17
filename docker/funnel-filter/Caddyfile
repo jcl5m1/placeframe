@@ -1,6 +1,7 @@
 # Front door for Tailscale Serve/Funnel (tailscale -> 127.0.0.1:58082 -> gateway 127.0.0.1:58081).
 # Tailscale adds Tailscale-User-Login only for tailnet clients and Tailscale-Funnel-Request for
 # public Funnel clients, so admin UIs are reachable from the tailnet but 403 from the internet.
+# /internal/* (the worker lease API) is only used inside Docker (api:8000), so it is blocked from outside too.
 {
 	admin off
 	auto_https off
@@ -23,15 +24,15 @@ http://:58082 {
 
 	handle {
 		@block_public {
-			path /auth/admin /auth/admin/* /auth/realms/master /auth/realms/master/* /cloudbeaver /cloudbeaver/* /grafana /grafana/*
+			path /auth/admin /auth/admin/* /auth/realms/master /auth/realms/master/* /cloudbeaver /cloudbeaver/* /grafana /grafana/* /internal /internal/*
 			not header Tailscale-User-Login *
 		}
 		@block_funnel {
-			path /auth/admin /auth/admin/* /auth/realms/master /auth/realms/master/* /cloudbeaver /cloudbeaver/* /grafana /grafana/*
+			path /auth/admin /auth/admin/* /auth/realms/master /auth/realms/master/* /cloudbeaver /cloudbeaver/* /grafana /grafana/* /internal /internal/*
 			header Tailscale-Funnel-Request *
 		}
-		respond @block_public "Forbidden: admin pages are tailnet-only" 403
-		respond @block_funnel "Forbidden: admin pages are tailnet-only" 403
+		respond @block_public "Forbidden: tailnet only" 403
+		respond @block_funnel "Forbidden: tailnet only" 403
 		reverse_proxy 127.0.0.1:58081 {
 			flush_interval -1
 		}
