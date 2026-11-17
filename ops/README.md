@@ -15,6 +15,8 @@ Each pass (~1 s when healthy) checks, and fixes what it can:
 | merge_jobs | job log silent 45 min in a local stage with idle pipeline processes; failed jobs | kill hung process, restart service (job resumes after its last finished stage) |
 | study | cost-study driver dead with variants pending; new variant errors | respawn (restart-safe) |
 | disk | < 15 GB free | archive finished job workspaces to `/mnt/hdd12t/placeframe_scratch` (symlinked) |
+| cleanup_published | merge jobs whose map was published > 72 h ago | delete large intermediates (keep logs/records), move the raw recording to the HDD (symlinked) |
+| backups | last nightly backup older than 36 h, or its MinIO copy failed | incident (banner) |
 | memory | < 3 GB available (or swap > 75% used while < 8 GB available); idle reconstructor holding > 8 GB | restart the idle reconstructor; report pressure with the biggest processes |
 | logs | log > 300 MB; log growing > 100 MB/h; reconstructor > 200k lines / 5 min | truncate keeping the last 20 MB; flag the noisy source |
 
@@ -60,3 +62,12 @@ reconstructor container. After editing any of them:
   follow. A restart re-resolves the path. Check with `docker exec … grep` that the container sees the new code.
 - **Mapper mode** (`local/reconstructor-mapper.json`, mounted at `/etc/placeframe/mapper.json`) is read at the start
   of every build, so it needs no restart. Write it in place (`echo … > file`).
+
+## Backups (`ops/backup.py`, nightly 03:30)
+`/mnt/hdd12t/backups/placeframe/`: `postgres/pg_dumpall-*.sql.zst` (all databases incl. Keycloak; last 14 kept) and
+`minio/<bucket>/` (incremental mirror of every bucket except Loki's logs, whose object names NTFS can't store).
+`last_backup.json` records the run. `python ops/backup.py --verify` restores the newest dump into a throwaway Postgres
+and compares row counts with the live database (passed 2026-11-16: 37 captures, 49 reconstructions, 23 maps).
+
+Restore: `zstd -dc <dump> | docker exec -i placeframe-postgres-1 psql -U postgres -f -`, then copy `minio/<bucket>/`
+back with `mc mirror` (stack stopped except Postgres and MinIO).

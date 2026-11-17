@@ -43,6 +43,9 @@ MEM_MIN_AVAILABLE_GB = 3.0
 SWAP_MAX_USED = 0.75
 MEM_LOW_WITH_SWAP_GB = 8.0
 RECON_IDLE_MAX_GB = 8.0
+CLEANUP_AFTER_H = 72  # a published job's intermediates are kept this long (in case the merge needs redoing)
+JOB_INTERMEDIATES = ("fisheye", "openvio", "openvins", "views", "capture", "equirect", "stitch", "merged.tar",
+                     "base_capture.tar")
 ONE_SHOT = ("initialize-", "create-database", "migrate-database", "auth-initializer")
 
 sys.path.insert(0, str(REPO))
@@ -148,7 +151,7 @@ class Watchdog:
     # ----------------------------------------------------------------------- checks
     def run(self) -> None:
         for check in (self.services, self.containers, self.server_builds, self.merge_jobs, self.study,
-                      self.disk, self.memory, self.logs):
+                      self.disk, self.memory, self.cleanup_published, self.backups, self.logs):
             try:
                 check()
             except Exception as e:  # a broken check must never stop the others
@@ -380,6 +383,67 @@ class Watchdog:
             self.incident("memory-pressure", f"only {avail_gb:.1f} GB memory available, swap {swap_used:.0%} used "
                           f"(reconstructor {recon_gb:.1f} GB{'' if idle else ', build running'})",
                           top, target="memory")
+
+    def cleanup_published(self) -> None:
+        """A merge job's large intermediates (frames, odometry runs, views, capture tars) are only needed to resume
+        it. Once its map has been published for CLEANUP_AFTER_H, delete them (keeping the job's logs and small
+        records) and move its raw recording to the HDD (symlinked, so reprocessing still works)."""
+        freed, moved, done = 0, 0, []
+        for jf in JOBS.glob("*/job.json"):
+            try:
+                j = json.loads(jf.read_text())
+            except ValueError:
+                continue
+            if j.get("state") != "succeeded" or not (j.get("result") or {}).get("map_id"):
+                continue
+            if time.time() - (j.get("finished") or time.time()) < CLEANUP_AFTER_H * 3600:
+                continue
+            work = (jf.parent / "work").resolve()
+            if work.is_dir() and not (work / "INTERMEDIATES_REMOVED").exists():
+                for name in JOB_INTERMEDIATES:
+                    p = work / name
+                    if p.is_dir():
+                        freed += sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+                        if not self.dry:
+                            shutil.rmtree(p)
+                    elif p.is_file():
+                        freed += p.stat().st_size
+                        if not self.dry:
+                            p.unlink()
+                if not self.dry:
+                    for m in work.glob(".done-*"):  # a retry redoes every stage from the raw recording
+                        m.unlink()
+                    if (work / "reconstruct.json").exists():
+                        (work / "reconstruct.json").rename(work / "reconstruct.published.json")
+                    (work / "INTERMEDIATES_REMOVED").write_text(f"Removed {time.strftime('%Y-%m-%d')} after publication.\n")
+                done.append(j["id"])
+            upload = Path(j.get("file") or "")
+            if upload.is_file() and not upload.is_symlink() and SCRATCH.is_dir():
+                dest = SCRATCH / "uploads" / upload.name
+                if not self.dry:
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(upload, dest)
+                    if dest.stat().st_size == upload.stat().st_size:
+                        upload.unlink()
+                        upload.symlink_to(dest)
+                        moved += 1
+        if done or moved:
+            self.incident("cleanup", f"published jobs: removed {freed / 1e9:.1f} GB of intermediates from "
+                          f"{len(done)} job(s), moved {moved} recording(s) to the HDD", ", ".join(done),
+                          fixed=True, target="cleanup")
+
+    def backups(self) -> None:
+        """The nightly backup (ops/backup.py, 03:30) must have succeeded within the last 36 h."""
+        last = Path("/mnt/hdd12t/backups/placeframe/last_backup.json")
+        if not last.exists():
+            self.incident("backup-missing", "no Placeframe backup found (ops/backup.py)", target="backup")
+            return
+        rec = json.loads(last.read_text())
+        age_h = (time.time() - last.stat().st_mtime) / 3600
+        if age_h > 36 or not rec.get("minio_ok"):
+            self.incident("backup-stale", f"last Placeframe backup {age_h:.0f} h ago"
+                          f"{'' if rec.get('minio_ok') else ', MinIO copy failed'}",
+                          (rec.get("minio_errors") or "") + "\n" + tail(HOME / "pf_watchdog/backup.log", 30), target="backup")
 
     def disk(self) -> None:
         free = shutil.disk_usage(HOME).free / 1e9
