@@ -10,7 +10,7 @@
   const HOST = '28palomas-rtx3090.tail3fa327.ts.net';
   const PAGES = [
     { id: 'dashboard', name: 'Mapper dashboard', folder: 'Project', url: `https://${HOST}/mapper/`, meta: 'uploads, jobs, compute' },
-    { id: 'viewer', name: 'Map visualizer', folder: 'Project', url: `http://${HOST}:8130/`, meta: 'tailnet only' },
+    { id: 'viewer', name: 'Map visualizer', folder: 'Project', url: `https://${HOST}:8130/`, meta: 'tailnet only' },
     { id: 'cost', name: 'Map cost study report', folder: 'Project', url: `https://${HOST}/mapper/cost/` },
     { id: 'api', name: 'Placeframe API docs', folder: 'Placeframe', url: `https://${HOST}/schema` },
     { id: 'grafana', name: 'Logs (Grafana)', folder: 'Placeframe', url: `https://${HOST}/grafana/`, meta: 'tailnet only' },

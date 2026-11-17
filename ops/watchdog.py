@@ -175,8 +175,10 @@ class Watchdog:
                           sh("tailscale funnel status 2>&1 | head -5")[1], target="funnel")
         if not procs(r"sampler\.py"):
             self.launch("restart resource sampler", ["python3", str(COST / "sampler.py")], COST, COST / "sampler.log")
-        if not procs(r"http\.server 8130"):
-            self.launch("restart map viewer", ["python3", "-m", "http.server", "8130"], HOME / "pf_x5/viewer",
+        # The viewer listens on localhost only; Tailscale Serve publishes it as https on port 8130 (tailnet only).
+        if not procs(r"http\.server 8131"):
+            self.launch("restart map viewer", ["python3", "-m", "http.server", "8131", "--bind", "127.0.0.1"],
+                        HOME / "pf_x5/viewer",
                         STATE_DIR / "viewer.log")
 
     def containers(self) -> None:
