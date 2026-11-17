@@ -1,7 +1,9 @@
 """Render a replayed tracked session as the phone would show it: camera frame (left), top-down view (right) with the
 map slice, the path registered to the map and the localizations that agreed, and the status line.
 
-  python bench/track_video.py REPLAY_DIR CANDIDATES.jsonl POINTS3D.txt OUT.mp4 [--fps 4]
+  python bench/track_video.py REPLAY_DIR CANDIDATES.jsonl POINTS3D.txt ~/pf_data/videos/<folder>/<name>.mp4 [--fps 4]
+Videos under ~/pf_data/videos appear in the dashboard's "Generated videos" page (a <name>.txt beside one is its
+description).
 The tracker is the current tracker.py run over the saved candidates.
 """
 import argparse
@@ -73,7 +75,7 @@ def main():
         d.text((16, 38), detail, font=small, fill=(200, 200, 200))
         img.save(tmp / f"{i:05d}.png")
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-framerate", str(a.fps), "-i", str(tmp / "%05d.png"),
-                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", a.out], check=True)
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", "-movflags", "+faststart", a.out], check=True)
     print("wrote", a.out)
 
 
