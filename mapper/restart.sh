@@ -25,6 +25,15 @@ for p in (Path.home() / "pf_mapper/jobs").glob("*/job.json"):
         j["state"] = "queued"
         tmp = p.with_suffix(".json.tmp"); tmp.write_text(json.dumps(j, indent=2)); tmp.replace(p)
 PY
-setsid nohup "$(dirname "$0")/run.sh" >> "$HOME/pf_mapper/service.log" 2>&1 < /dev/null &
+# Start the service in its own systemd unit when the user manager is reachable, so it does not live in the caller's
+# process group: started from an agent's shell it would otherwise be stopped whenever that agent's service restarts.
+# From cron (no user bus) it is started detached as before.
+RUN="$(cd "$(dirname "$0")" && pwd)/run.sh"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+if ! systemd-run --user --quiet --collect --unit="pf-mapper-$(date +%s)" -p KillMode=process --setenv=PATH="$HOME/.local/bin:$PATH" \
+    -p StandardOutput="append:$HOME/pf_mapper/service.log" -p StandardError="append:$HOME/pf_mapper/service.log" \
+    "$RUN" 2>/dev/null; then
+  setsid nohup "$RUN" >> "$HOME/pf_mapper/service.log" 2>&1 < /dev/null &
+fi
 for i in $(seq 1 30); do sleep 2; curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8150/ | grep -q 200 && { echo "service up"; exit 0; }; done
 echo "service did not come up — see ~/pf_mapper/service.log"; exit 1
