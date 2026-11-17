@@ -1,6 +1,6 @@
 # Placeframe: findings, fixes and extensions from a self-hosted deployment
 
-**To:** the Placeframe team · **Status:** for your review and feedback; nothing submitted yet
+**To:** the Placeframe team · **Status:** draft for your review and feedback (updated Nov 17); nothing submitted yet
 
 We run Placeframe self-hosted on one RTX 3090 workstation, mapping homes with an Insta360 X5 (360° video) and
 localizing phones against those maps. Our fork is based on `main` (May 2026); we have since compared it with
@@ -66,9 +66,17 @@ localizing phones against those maps. Our fork is based on `main` (May 2026); we
    matches) in object storage so a re-leased job resumes. We would adopt your requeue-count cap.
 9. **Map placement from capture GPS** (`location.json`, placed in ENU at the fix) and **server-side recording of
    localization requests** for replay (complements your client-side recorder).
+10. **Half-precision descriptors in the reconstructor.** Builds held every image's local descriptors in RAM in full
+   precision, trained the compression on a second full-precision copy of all of them, and moved all of them to the
+   GPU for matching: a 9,072-image map peaked at 18 GB of RAM, so a ~20,000-image venue would not fit a 32 GB
+   machine. Now descriptors stay in float16, each matching batch moves only its own images to the GPU, and OPQ/PQ
+   train on a seeded 1M-descriptor sample. Same map: peak RAM 11.9 GiB, peak GPU 4.9 GB, 8,556 registered images
+   (full precision: 8,508 and 8,532), median reprojection error 0.68 px (0.69); LightGlue's matches are identical in
+   half and full precision.
 
-A cost study (building and serving maps for a 10,000 m² venue with 3,000 attendees, measured on this pipeline) is in
-our pipeline repository: `cost/COST_STUDY.md`. In short: a venue map builds in ~1.3 h on one RTX 3090, and serving
+A cost study (building and serving maps for a 10,000 m² venue with 3,000 attendees, measured on this pipeline):
+[Cost study v2](https://28palomas-rtx3090.tail3fa327.ts.net/placeframe/reports/DYddaNp1_WGNuSrMNbhQS02Wke9Mxb6jew/)
+(you can comment on any part of it). In short: a venue map builds in ~1.3 h on one RTX 3090, and serving
 cost is dominated by how often phones query (adaptive querying: ~$28 per event day on marketplace GPUs) and by
 map egress when GPUs and storage sit in different clouds.
 
@@ -88,16 +96,17 @@ request until you tell us which parts you want, and against which branch.
 |---|---|
 | Fix 1: restart the reconstructor after each job | [`64f0c372`](https://github.com/jcl5m1/placeframe/commit/64f0c372) |
 | Fix 2: limit progress output | [`d173cc56`](https://github.com/jcl5m1/placeframe/commit/d173cc56), [`4f217cdd`](https://github.com/jcl5m1/placeframe/commit/4f217cdd) |
-| Extension 1: prior-pose mapper; merge reuse | [`356939cc`](https://github.com/jcl5m1/placeframe/commit/356939cc); [`1922a9ca`](https://github.com/jcl5m1/placeframe/commit/1922a9ca) |
+| Extension 1: prior-pose mapper; merge reuse | [`356939cc`](https://github.com/jcl5m1/placeframe/commit/356939cc); [`1922a9ca`](https://github.com/jcl5m1/placeframe/commit/1922a9ca), each job in an empty work folder [`73738326`](https://github.com/jcl5m1/placeframe/commit/73738326) |
 | Extension 2: merge registration and check | in our pipeline repository ([`a488978`](https://github.com/jcl5m1/placeframe-insta360/commit/a488978)) |
 | Extension 3: GPU bundle adjustment | worker image build in our pipeline repository (`gpu/`), no Placeframe code change |
-| Extension 4: tracked localization | [`549d0ef4`](https://github.com/jcl5m1/placeframe/commit/549d0ef4) (API, localizer, tracker, tests), worker threads [`f5251e25`](https://github.com/jcl5m1/placeframe/commit/f5251e25), session routing across processes [`c7fbbeeb`](https://github.com/jcl5m1/placeframe/commit/c7fbbeeb) |
+| Extension 4: tracked localization | [`549d0ef4`](https://github.com/jcl5m1/placeframe/commit/549d0ef4) (API, localizer, tracker, tests), worker threads [`f5251e25`](https://github.com/jcl5m1/placeframe/commit/f5251e25), session routing across processes [`c7fbbeeb`](https://github.com/jcl5m1/placeframe/commit/c7fbbeeb), strict type checks [`4edf296c`](https://github.com/jcl5m1/placeframe/commit/4edf296c), regenerated clients [`e363c5a6`](https://github.com/jcl5m1/placeframe/commit/e363c5a6) |
 | Extension 6: query size parameter | [`683136a4`](https://github.com/jcl5m1/placeframe/commit/683136a4); adaptive rate in the app [`46d0838f`](https://github.com/jcl5m1/placeframe/commit/46d0838f) |
 | Extension 7: upright phone images | [`4b606387`](https://github.com/jcl5m1/placeframe/commit/4b606387) |
 | Extension 8: preemptible workers | [`4d7a7673`](https://github.com/jcl5m1/placeframe/commit/4d7a7673), [`2ba41ebf`](https://github.com/jcl5m1/placeframe/commit/2ba41ebf), heartbeat fix [`f75eeac3`](https://github.com/jcl5m1/placeframe/commit/f75eeac3) |
 | Extension 9: GPS placement; request recording | [`ddc88e58`](https://github.com/jcl5m1/placeframe/commit/ddc88e58), [`1fb9ed32`](https://github.com/jcl5m1/placeframe/commit/1fb9ed32); [`50621a68`](https://github.com/jcl5m1/placeframe/commit/50621a68) |
+| Extension 10: half-precision descriptors | [`dc890b0f`](https://github.com/jcl5m1/placeframe/commit/dc890b0f) |
 | Panoramic rig pairing | [`ba13a599`](https://github.com/jcl5m1/placeframe/commit/ba13a599) |
-| Flutter client | [`5cb59995`](https://github.com/jcl5m1/placeframe/commit/5cb59995), [`b94ec1eb`](https://github.com/jcl5m1/placeframe/commit/b94ec1eb), [`4b606387`](https://github.com/jcl5m1/placeframe/commit/4b606387), [`46d0838f`](https://github.com/jcl5m1/placeframe/commit/46d0838f) |
+| Flutter client | [`5cb59995`](https://github.com/jcl5m1/placeframe/commit/5cb59995), [`b94ec1eb`](https://github.com/jcl5m1/placeframe/commit/b94ec1eb), [`4b606387`](https://github.com/jcl5m1/placeframe/commit/4b606387), [`46d0838f`](https://github.com/jcl5m1/placeframe/commit/46d0838f), [`64b61ade`](https://github.com/jcl5m1/placeframe/commit/64b61ade) |
 | Already on your branches (for reference) | [`c229dbbe`](https://github.com/jcl5m1/placeframe/commit/c229dbbe), [`f0624a2b`](https://github.com/jcl5m1/placeframe/commit/f0624a2b), [`2bbdc88f`](https://github.com/jcl5m1/placeframe/commit/2bbdc88f), [`28af7704`](https://github.com/jcl5m1/placeframe/commit/28af7704), [`523429df`](https://github.com/jcl5m1/placeframe/commit/523429df) |
 
 Our deployment overlay ([`476d9888`](https://github.com/jcl5m1/placeframe/commit/476d9888)) mounts these changes over your published images on one host; it is not
@@ -105,7 +114,8 @@ meant for upstream.
 
 ## Questions for you
 
-1. Would you take the two fixes (process restart, log volume) as pull requests against `dev`?
+1. Would you take the two fixes (process restart, log volume) and half-precision descriptors as pull requests
+   against `dev`?
 2. Are the merge findings (piecewise registration and the shared-points check) useful for `dev_hh`'s merge flow?
 3. Server-side or client-side tracking: would you like the tracker and its evaluation tools as a reference, or
    ported to your client filter's interface?
