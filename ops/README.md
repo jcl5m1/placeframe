@@ -29,6 +29,16 @@ Incidents also come from outside the watchdog: a merge whose new recording share
 the existing map (`merge-poorly-joined`, from `add_recording_to_map.py`; the old map stays active) and nightly
 localization regressions (`ops/regression.py`).
 
+## Storage policy
+
+The 12 TB HDD (`/mnt/hdd12t`) is for backups and long-term archives only: nothing real-time or latency-sensitive may
+depend on it. Live data stays on the SSD (Docker volumes: MinIO, Postgres; `~/pf_data`: localization recordings,
+working copies of regression and replay data). `ops/backup.py` copies every recorded day to the HDD each night and
+removes days older than 14 from the SSD once the copy is complete; the replay tools read archived days when the HDD
+is mounted. When the HDD is offline the watchdog reports `storage-offline` and backups, archiving and old-job cleanup
+wait; the services keep running. A stopped container is restarted in place (`docker start`); `uv run up` is only
+the last resort, since it recreates containers from published image tags.
+
 ## Map updater concurrency
 
 The map updater runs up to `MAPPER_PARALLEL_JOBS` (default 2) jobs at once, so one recording's preprocessing (CPU)
