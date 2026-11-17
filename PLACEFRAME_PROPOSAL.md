@@ -71,6 +71,32 @@ merging, GPS), a credential-free GPU fleet on rented interruptible GPUs (pre-sig
 Flutter client for Android/iOS without Unity, a cost study (build compute, serving load, storage) and operations
 tooling (dashboard, watchdog, backups, nightly localization regression checks).
 
+## Where to look
+
+Everything is on our fork's [`local/main`](https://github.com/jcl5m1/placeframe/tree/local/main) branch (based on your
+`main`; [full comparison](https://github.com/outernet-foundation/placeframe/compare/main...jcl5m1:placeframe:local/main)),
+one commit per change so each can be reviewed, picked or dropped on its own. Nothing will be opened as a pull
+request until you tell us which parts you want, and against which branch.
+
+| Item | Commits |
+|---|---|
+| Fix 1: restart the reconstructor after each job | [`64f0c372`](https://github.com/jcl5m1/placeframe/commit/64f0c372) |
+| Fix 2: limit progress output | [`d173cc56`](https://github.com/jcl5m1/placeframe/commit/d173cc56), [`4f217cdd`](https://github.com/jcl5m1/placeframe/commit/4f217cdd) |
+| Extension 1: prior-pose mapper | [`356939cc`](https://github.com/jcl5m1/placeframe/commit/356939cc) |
+| Extension 2: merge registration and check | in our pipeline repository ([`a488978`](https://github.com/jcl5m1/placeframe-insta360/commit/a488978)) |
+| Extension 3: GPU bundle adjustment | worker image build in our pipeline repository (`gpu/`), no Placeframe code change |
+| Extension 4: tracked localization | [`549d0ef4`](https://github.com/jcl5m1/placeframe/commit/549d0ef4) (API, localizer, tracker, tests) |
+| Extension 6: query size parameter | [`683136a4`](https://github.com/jcl5m1/placeframe/commit/683136a4); adaptive rate in the app [`46d0838f`](https://github.com/jcl5m1/placeframe/commit/46d0838f) |
+| Extension 7: upright phone images | [`4b606387`](https://github.com/jcl5m1/placeframe/commit/4b606387) |
+| Extension 8: preemptible workers | [`4d7a7673`](https://github.com/jcl5m1/placeframe/commit/4d7a7673), [`2ba41ebf`](https://github.com/jcl5m1/placeframe/commit/2ba41ebf) |
+| Extension 9: GPS placement; request recording | [`ddc88e58`](https://github.com/jcl5m1/placeframe/commit/ddc88e58), [`1fb9ed32`](https://github.com/jcl5m1/placeframe/commit/1fb9ed32); [`50621a68`](https://github.com/jcl5m1/placeframe/commit/50621a68) |
+| Panoramic rig pairing | [`ba13a599`](https://github.com/jcl5m1/placeframe/commit/ba13a599) |
+| Flutter client | [`5cb59995`](https://github.com/jcl5m1/placeframe/commit/5cb59995), [`b94ec1eb`](https://github.com/jcl5m1/placeframe/commit/b94ec1eb), [`4b606387`](https://github.com/jcl5m1/placeframe/commit/4b606387), [`46d0838f`](https://github.com/jcl5m1/placeframe/commit/46d0838f) |
+| Already on your branches (for reference) | [`c229dbbe`](https://github.com/jcl5m1/placeframe/commit/c229dbbe), [`f0624a2b`](https://github.com/jcl5m1/placeframe/commit/f0624a2b), [`2bbdc88f`](https://github.com/jcl5m1/placeframe/commit/2bbdc88f), [`28af7704`](https://github.com/jcl5m1/placeframe/commit/28af7704), [`523429df`](https://github.com/jcl5m1/placeframe/commit/523429df) |
+
+Our deployment overlay ([`476d9888`](https://github.com/jcl5m1/placeframe/commit/476d9888)) mounts these changes over your published images on one host; it is not
+meant for upstream.
+
 ## Questions for you
 
 1. Would you take the two fixes (process restart, log volume) as pull requests against `dev`?
