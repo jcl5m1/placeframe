@@ -39,10 +39,11 @@ class ReconstructionPublisher:
             return
         self._progress_current = current
         self._progress_attempt = attempt
-        print(f"[{self._status.value}] {current}/{self._progress_total}")
         now = perf_counter()
-        # Throttle API flushes to ~2 Hz; the per-tick stdout above is unthrottled.
-        if now - self._last_emit >= 0.5:
+        # Flush to the API and log at ~2 Hz, plus the final tick: per-tick output flooded the container log
+        # (170k lines for one geometry-verification phase).
+        if now - self._last_emit >= 0.5 or current == self._progress_total:
+            print(f"[{self._status.value}] {current}/{self._progress_total}")
             self._flush()
             self._last_emit = now
 

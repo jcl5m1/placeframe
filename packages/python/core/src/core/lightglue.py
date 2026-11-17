@@ -10,6 +10,8 @@ from torch.nn.utils.rnn import pad_sequence
 
 from .numpy_ops import compress, nonzero
 
+PROGRESS_STEPS = 20  # progress lines per pass (every 5%)
+
 NumMatches = NewType("NumMatches", int)
 
 MatchIndices = dict[
@@ -57,7 +59,10 @@ def lightglue_match_tensors(
     num_batches = (len(pairs) + batch_size - 1) // batch_size
     match_indices: MatchIndices = {}
     for batch_start in range(0, len(pairs), batch_size):
-        print(f"Matching features: batch {batch_start // batch_size + 1} of {num_batches}")
+        if (batch_start // batch_size + 1) % max(
+            1, num_batches // PROGRESS_STEPS
+        ) == 0 or batch_start // batch_size + 1 == num_batches:
+            print(f"Matching features: batch {batch_start // batch_size + 1} of {num_batches}")
         batch_pairs = pairs[batch_start : batch_start + batch_size]
 
         with inference_mode():

@@ -15,6 +15,7 @@ from numpy.typing import NDArray  # noqa: TID251 — Phase T piece 3 follow-up m
 
 OPQ_MATRIX_FILE = "opq_matrix.tf"
 PQ_QUANTIZER_FILE = "pq_quantizer.pq"
+PROGRESS_STEPS = 20  # progress lines per pass (every 5%)
 
 
 def train_opq_matrix(number_of_subvectors: int, number_of_training_iterations: int, training_unit: NDArray[float32]):
@@ -40,7 +41,8 @@ def encode_descriptors(
 ):
     images_codes: dict[str, NDArray[uint8]] = {}
     for i, name in enumerate(image_descriptors.keys()):
-        print(f"Encoding image {i + 1} of {len(image_descriptors)}")
+        if (i + 1) % max(1, len(image_descriptors) // PROGRESS_STEPS) == 0 or i + 1 == len(image_descriptors):
+            print(f"Encoding image {i + 1} of {len(image_descriptors)}")
         descriptors_contiguous = ascontiguousarray(image_descriptors[name])
         descriptors_rotated = cast(NDArray[float32], opq_matrix.apply(descriptors_contiguous))  # type: ignore
         codes = cast(NDArray[uint8], product_quantizer.compute_codes(descriptors_rotated))  # type: ignore
