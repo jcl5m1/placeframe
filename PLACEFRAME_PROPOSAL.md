@@ -1,61 +1,80 @@
-# Placeframe: bug fixes and extensions from a self-hosted deployment
+# Placeframe: findings, fixes and extensions from a self-hosted deployment
 
-**To:** the Placeframe team · **Status:** proposal; nothing submitted yet
+**To:** the Placeframe team · **Status:** for your review and feedback; nothing submitted yet
 
-We have been running Placeframe self-hosted on a single RTX 3090 workstation to map homes with an Insta360 X5
-(360° video) and localize phones against those maps. Along the way we fixed some bugs in Placeframe and built
-extensions around it. We would like to contribute the bug fixes, and to ask whether any of the extensions are
-of interest before we prepare them as pull requests.
+We run Placeframe self-hosted on one RTX 3090 workstation, mapping homes with an Insta360 X5 (360° video) and
+localizing phones against those maps. Our fork is based on `main` (May 2026); we have since compared it with
+`dev`, `dev_hh` and your open branches (Nov 17) so that we only propose what you don't already have.
 
-## Bug fixes (ready as small, separate pull requests)
+## Already on your branches (we will drop ours)
 
-Branch `fixes/upstream`: five commits on top of `main` (6 files, +87/−22). Each is independent.
+| Our change | Yours |
+|---|---|
+| Stale-lease reap committed in its own transaction | `dev` lease server (`87790560`) |
+| Reconstructor token refresh during long jobs | moot on `dev` (internal lease server, no auth) |
+| Reconstructed frames written in capture order | `dev_hh` `c051b46c` (also writes frame ids) |
+| Block `/internal` on the public endpoint | superseded by the internal lease server |
+| Empty the localizer's CUDA cache; LightGlue in small batches | `oom-fix` `aca42dfd`, `dev_hh` `3f09dd9b` |
+| Pass the localizer's 422 reason to clients | `dev_hh` `0b6a814e` |
 
-| Fix | Symptom we hit | Change |
-|---|---|---|
-| Commit the stale-lease reap in its own transaction | A crashed worker's job stayed "in progress" for good: `request_lease` raises `NotFoundException` on an empty queue, which rolls back the session, including the reap | Reap in a separate session, committed before the queue lookup |
-| Refresh the reconstructor's access token during long jobs | A multi-hour build finished but could not report success (expired token) | Background refresh of the shared `Authorization` header every 30 s |
-| Write reconstructed frames in capture order | Trajectory overlays drew a scrambled path (frames were in COLMAP registration order) | Sort frames by rig and timestamp before writing |
-| Restart the reconstructor process after each job | A long-lived worker kept ~8 GB after each large build; a later 7,242-image build started short of memory, swapped for an hour and was OOM-killed (the build itself peaks at 11 GB) | After each job the worker `execv`s a fresh process; `RECONSTRUCTOR_RECYCLE_AFTER_JOB=0` opts out |
-| Limit reconstructor progress output | ~209,000 log lines for one build (170,000 from geometry verification): the publisher printed every tick and encoding/matching printed per image/batch | Print at the API flush rate (~2 Hz) and every 5% |
+## Fixes not on your branches
 
-## Extensions (are any of these of interest?)
+1. **Restart the reconstructor process after each job.** The real cause of our out-of-memory kills: a long-lived
+   worker kept ~8 GB of host memory after each large build, so the next 7,000-image build swapped for an hour and
+   was killed (the build itself peaks at 11 GB). `execv` after each job; opt out with an env var.
+2. **Limit progress output.** One build printed ~209,000 log lines (170,000 from geometry verification); on `dev`
+   the publisher still prints every tick. Print at the API flush rate and every 5%.
 
-Placeframe changes on branch `local/main` (each is its own commit; all opt-in or behind a setting):
+## Extensions: measurements and questions
 
-1. **Fast prior-pose mapper.** Start every frame at its capture pose and refine with pose-prior bundle adjustment
-   instead of incremental registration. Merging a new recording into an existing ~2,000-image map: about 40 min
-   instead of 4–6+ h. Chosen automatically for merges and for captures with a tight position prior.
-2. **GPU bundle adjustment.** pycolmap built with CUDA (Ceres + cuDSS): one global BA on a ~1,250-frame map takes
-   29 s instead of 293 s; first builds about 4× faster end to end on our test capture.
-3. **Panoramic rig pairing.** For rigs whose cameras share a centre (360° views split into pinhole images), pair
-   frames by proximity and match only views whose fields of view overlap.
-4. **Preemptible workers.** Lease heartbeat, configurable lease timeout, re-queueing of timed-out jobs, and stage
-   checkpoints (features, matches) to object storage so a re-leased job resumes.
-5. **Place maps on the globe from GPS.** A capture may include `location.json`; a map created without a placement
-   is placed from it (ENU at the fix), so location-based map lookup finds it. The Unity capture tool records the
-   device location with each capture.
-6. **Localization request recording** (optional) for replaying real client sessions in tests.
+1. **Fast prior-pose mapper.** Start frames at their capture poses and refine with pose-prior bundle adjustment
+   instead of incremental mapping. Merging a recording into a ~2,000-image map: ~40 min instead of 4–6+ h; a full
+   8,370-image, three-recording house map builds in 35 min. `dev_hh`'s merge flow still maps incrementally.
+2. **Merge registration must follow heading drift.** A new recording registered to the map with one rigid
+   transform (as `dev_hh`'s align step does with yaw/scale/translation) left part of our house as a second copy
+   rotated 32°: the X5's odometry heading drifted 32° over a 14-minute walk. Phones then localized confidently on
+   the wrong copy. We now fit the alignment piecewise along the recording (rotation and position, from
+   localizations every ~5 s) and check the result: the share of the new recording's map points also seen by the
+   rest of the map went from 15% to 70%, and confidently wrong phone fixes on a recorded walk from 31 to 6 of 286.
+   A merge sharing under 30% is not allowed to replace the old map.
+3. **GPU bundle adjustment** (Ceres + cuDSS). Your `AGENTS.md` measured no gain at 318 cameras. At our sizes it
+   matters: one global BA on a ~1,250-frame map takes 29 s instead of 293 s; our merges are 7,000–8,400 images.
+4. **Localization of a moving phone (a different design from yours, for discussion).** Your design docs put the
+   multi-hypothesis filter on the client. We built it on the server (`POST /localize/track`): the client sends
+   each frame with its ARCore/ARKit odometry pose and a session id; the localizer produces candidate poses per
+   place (retrieved images grouped by location, plus images near the predicted pose, with no confidence gate) and a
+   per-session tracker keeps every candidate alignment between the map and the odometry frame, merges duplicates
+   (0.5 m / 10°, which addresses the duplicate-hypothesis problem in your false-lock diagnosis), and returns the most
+   probable one with its probability. It also re-anchors after the odometry's own jumps (ARCore moved one walk
+   5 m in a second). On a 286-frame recorded walk: the served pose is within 0.5 m on 274–278 frames and wrong by
+   more than 1 m on 6, all in one stretch with no usable views. The client stays thin and needs no localization
+   code. We would value your view on server versus client placement; our evaluation tools would apply to either.
+5. **Evaluation without ground truth.** Recorded client sessions (image, camera, odometry) replay through the
+   localizer; a reference alignment comes from the odometry's local consistency (correct matches in a short window
+   imply the same map alignment), split at odometry jumps. This is how the numbers above were measured, and how
+   we chose the settings below.
+6. **Phone queries: smaller and fewer.** Phone frames are 480–1080 px; upscaling a 640×480 frame to 1,024 px
+   (`LOCAL_FEATURE_RESIZE_SHORTER_SIDE`) cost accuracy: at 640 the right pose was found 6% more often in a third
+   less time (we made the size a parameter; the default is unchanged). An adaptive query rate (every 5 s while
+   fixes agree, every frame after a disagreement or an odometry jump) sent 4× fewer queries than 1 Hz with the same
+   accuracy; for a 3,000-attendee venue it is the largest serving-cost factor.
+7. **Portrait images.** Android phones held upright deliver sideways camera images; without the right
+   `orientation` our matches fell from confidence 0.75 to 0.07. Your Unity provider hard-codes `LEFT_TOP` (a
+   transpose) on Android: is that intended for ARFoundation's image layout, or worth checking for portrait use?
+8. **Preemptible workers:** lease heartbeat, configurable lease timeout, and stage checkpoints (features,
+   matches) in object storage so a re-leased job resumes. We would adopt your requeue-count cap.
+9. **Map placement from capture GPS** (`location.json`, placed in ENU at the fix) and **server-side recording of
+   localization requests** for replay (complements your client-side recorder).
 
-Outside Placeframe (separate repository; happy to share):
-
-- **Insta360 X5 pipeline:** `.insv` to captures (dual-fisheye calibration, OpenVIO odometry), merging new recordings
-  into existing maps, GPS from the camera's metadata.
-- **Credential-free GPU fleet:** a lease agent on the server plus a broker that runs jobs on rented interruptible
-  GPUs (Vast.ai) using only pre-signed object-storage URLs, with an access log and checkpoint resume. Tested end to
-  end; a rented worker is ready about 2 min 20 s after it is created.
-- **Flutter client (iOS/Android):** a lightweight localization and capture app without Unity, sharing all code except
-  a small ARKit/ARCore frame module per platform (Android builds; iOS untested).
-- **Operations:** a web dashboard for uploads and builds, a watchdog that restarts stuck work and flags failures,
-  and nightly backups.
+Outside Placeframe (separate repository; happy to share): the Insta360 X5 pipeline (calibration, odometry,
+merging, GPS), a credential-free GPU fleet on rented interruptible GPUs (pre-signed object-storage URLs), a
+Flutter client for Android/iOS without Unity, a cost study (build compute, serving load, storage) and operations
+tooling (dashboard, watchdog, backups, nightly localization regression checks).
 
 ## Questions for you
 
-1. Would you accept the five bug fixes as pull requests? Any preferred format: one per fix, or one combined PR?
-2. Which extensions, if any, would you like upstream? The prior-pose mapper and GPU bundle adjustment seemed the most
-   broadly useful to us.
-3. For the Flutter client and the fleet: would you prefer them in the main repository, or as separate repositories
-   that link to Placeframe?
-
-All changes follow the repository's `CLAUDE.md` conventions, and we will run `uv run --no-sync preflight` on each
-pull request before submitting.
+1. Would you take the two fixes (process restart, log volume) as pull requests against `dev`?
+2. Are the merge findings (piecewise registration and the shared-points check) useful for `dev_hh`'s merge flow?
+3. Server-side or client-side tracking: would you like the tracker and its evaluation tools as a reference, or
+   ported to your client filter's interface?
+4. Should GPU bundle adjustment come back as an option for large captures, given the numbers above?

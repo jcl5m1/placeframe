@@ -96,5 +96,6 @@ docker run -d --name pf-lease-agent --network placeframe_default --add-host <pub
   -v placeframe_auth_data:/run/secrets:ro -v ~/pf_fleet:/root/pf_fleet -v <repo>/fleet:/fleet:ro \
   -v <placeframe>/local/reconstructor-mapper.json:/etc/placeframe/mapper.json:ro \
   --env-file ~/pf_fleet/local-worker.env --entrypoint /opt/uv/venv/bin/python placeframe-worker:local -u /fleet/lease_agent.py
-python fleet/broker.py --provider vast --max-instances 2 --budget 3 [--chaos-after-checkpoint] [--until-idle]
+python fleet/broker.py --provider vast --max-instances 2 --budget 3 [--chaos-after-checkpoint] [--until-idle] \
+  [--offer-filter 'gpu_name in [RTX_3090,RTX_4090] cpu_cores_effective>=12 cpu_ram>=32']  # rent what the job needs
 ```

@@ -12,7 +12,7 @@ Each pass (~1 s when healthy) checks, and fixes what it can:
 | services | map updater not answering, sampler/viewer dead, public URL down | `mapper/restart.sh`, respawn (detached), incident |
 | containers | any long-running Placeframe container not `running` | `uv run up`, incident with container logs |
 | server_builds | build whose status/progress/updated_at hasn't changed for 30 min **and** worker idle (<25% CPU, no log line for 20 min); worker logged success but couldn't report (expired token) | restart worker + mark failed + retry; or mark succeeded when outputs are complete |
-| merge_jobs | job log silent 45 min in a local stage with idle pipeline processes; failed jobs | kill hung process, restart service (job resumes after its last finished stage) |
+| merge_jobs | job log silent 45 min in a local stage with idle pipeline processes; failed jobs | kill that job's process; restart the service (the job resumes after its last finished stage) unless another job is running, then leave it failed for a retry |
 | study | cost-study driver dead with variants pending; new variant errors | respawn (restart-safe) |
 | disk | < 15 GB free | archive finished job workspaces to `/mnt/hdd12t/placeframe_scratch` (symlinked) |
 | cleanup_published | merge jobs whose map was published > 72 h ago | delete large intermediates (keep logs/records), move the raw recording to the HDD (symlinked) |
@@ -24,6 +24,17 @@ Long bundle adjustments are not stalls: a busy worker (CPU > 25%) that is still 
 Problems it cannot fix appear in a banner at the top of the mapper dashboard until dismissed there.
 While `~/pf_fleet/home_worker_paused` exists, a stopped home reconstructor is not restarted (fleet runs).
 State: `~/pf_watchdog/state.json`. Dry run: `python ops/watchdog.py --dry-run`.
+
+Incidents also come from outside the watchdog: a merge whose new recording shares under 30% of its map points with
+the existing map (`merge-poorly-joined`, from `add_recording_to_map.py`; the old map stays active) and nightly
+localization regressions (`ops/regression.py`).
+
+## Map updater concurrency
+
+The map updater runs up to `MAPPER_PARALLEL_JOBS` (default 2) jobs at once, so one recording's preprocessing (CPU)
+overlaps another's reconstruction (GPU). Recordings of the same upload group, and merges into the same map, still run
+one after another: each merges into the map the previous one produced. Within a job, odometry and stitching run side
+by side. A job re-run against a different target map redoes registration, merge and build (`target_map.txt`).
 
 ## Tier 2 — agent escalation (every 10 min while a Claude session is open)
 Reads new `needs_attention` incidents from `~/pf_watchdog/incidents.jsonl`, diagnoses root cause from the recorded
