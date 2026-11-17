@@ -9,3 +9,6 @@ data/
 *.whl
 *.insv
 *.lrv
+
+# Large media for the published proposal (symlinks to ~/pf_data/videos)
+proposal_media/*.mp4

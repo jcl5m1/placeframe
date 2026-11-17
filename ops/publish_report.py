@@ -9,12 +9,13 @@ same source keeps its id (and its comments) and updates its "updated" time.
   python ops/publish_report.py --list
   python ops/publish_report.py --comments <id>                       # the comments, as Markdown, for review
 
-Images the report references by relative path are copied next to it. Reports live in ~/pf_data/reports (SSD).
+Images and videos the report references by relative path are copied next to it. Reports live in ~/pf_data/reports (SSD).
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import secrets
 import shutil
@@ -24,7 +25,8 @@ from pathlib import Path
 REPORTS = Path.home() / "pf_data" / "reports"
 REGISTRY = REPORTS / "registry.json"
 BASE_URL = "https://28palomas-rtx3090.tail3fa327.ts.net/placeframe/reports"
-IMAGE = re.compile(r"!\[[^\]]*\]\(([^)\s]+)")
+# Files a report embeds: Markdown images and the src/poster of HTML tags (a <video> and its poster image).
+ASSET = re.compile(r"!\[[^\]]*\]\(([^)\s]+)|(?:src|poster)=\"([^\"]+)\"")
 
 
 def main() -> None:
@@ -51,13 +53,15 @@ def main() -> None:
     title = a.title or (reg.get(rid) or {}).get("title") or _first_heading(text) or src.stem
     out = REPORTS / rid
     out.mkdir(parents=True, exist_ok=True)
-    for ref in IMAGE.findall(text):
+    for ref in (a or b for a, b in ASSET.findall(text)):
         if "://" in ref or ref.startswith("/"):
             continue
-        img = (src.parent / ref).resolve()
-        if img.is_file() and img.is_relative_to(src.parent):
+        # Contained by the path as written, not the resolved one: a large file kept out of git (a video) can be a
+        # symlink next to the report; its target is copied.
+        asset = Path(os.path.normpath(src.parent / ref))
+        if asset.is_file() and asset.is_relative_to(src.parent):
             (out / ref).parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(img, out / ref)
+            shutil.copy2(asset, out / ref)
     (out / "report.md").write_text(text)
     reg[rid] = {"title": title, "source": str(src), "created": (reg.get(rid) or {}).get("created", now), "updated": now}
     REPORTS.mkdir(parents=True, exist_ok=True)
