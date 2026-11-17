@@ -29,6 +29,25 @@ Incidents also come from outside the watchdog: a merge whose new recording share
 the existing map (`merge-poorly-joined`, from `add_recording_to_map.py`; the old map stays active) and nightly
 localization regressions (`ops/regression.py`).
 
+## Web pages
+
+Everything is under `https://<host>/placeframe/`, served by one project server (`mapper/server.py` +
+`mapper/project_pages.py`, port 8150) that decides per route who may see it; the Placeframe API keeps its own stack.
+
+| Path | Page | Access |
+|---|---|---|
+| `/placeframe/` | project home | public (links only) |
+| `/placeframe/dashboard/` | uploads, maps, builds (was `/mapper/`, which redirects; `/mapper/api/` stays for the app) | sign-in |
+| `/placeframe/visualizer/` | 3D map visualizer (`:8130` is an alias) | tailnet |
+| `/placeframe/reports/` | list of reports | tailnet |
+| `/placeframe/reports/<id>/` | one report: permanent, unguessable link; anyone with it can read and comment | link |
+| `/placeframe/videos/` | generated videos (`?v=<path>` for one) | tailnet |
+
+Every page uses the same header (`web/pf_ui.js`, `PfUI.header`). Reports are published with
+`ops/publish_report.py <file.md>` (re-publishing keeps the link and comments); comments are anchored to the selected
+text (W3C Web Annotation selectors, [Recogito text annotator](web/vendor/README.md)) and readable as Markdown with
+`ops/publish_report.py --comments <id>` or as JSON at `<report link>comments.json`.
+
 ## Storage policy
 
 The 12 TB HDD (`/mnt/hdd12t`) is for backups and long-term archives only: nothing real-time or latency-sensitive may
