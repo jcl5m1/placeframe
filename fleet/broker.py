@@ -44,6 +44,9 @@ def main() -> None:
     ap.add_argument("--max-instances", type=int, default=1)
     ap.add_argument("--budget", type=float, default=2.0, help="stop renting once estimated spend reaches this ($)")
     ap.add_argument("--max-bid", type=float, default=0.30, help="highest $/h bid for one GPU")
+    ap.add_argument("--offer-filter", default="",
+                    help="extra Vast offer conditions to rent what the job needs, not the cheapest big GPU, e.g. "
+                         "'gpu_name in [RTX_3090,RTX_4090] cpu_cores_effective>=12 cpu_ram>=32'")
     ap.add_argument("--attempts", type=int, default=5, help="instances lost (not counting chaos kills) before giving up")
     ap.add_argument("--bid-factor", type=float, default=1.5,
                     help="bid = minimum bid x this: low bids get outbid (preempted) often")
@@ -65,7 +68,7 @@ def main() -> None:
     code_key = _publish_code(s3, bucket)
     state = json.loads(STATE.read_text()) if STATE.exists() else {}
     (BROKER / "capacity").write_text(str(a.max_instances))
-    log("broker_start", max_instances=a.max_instances, budget=a.budget, max_bid=a.max_bid)
+    log("broker_start", max_instances=a.max_instances, budget=a.budget, max_bid=a.max_bid, offer_filter=a.offer_filter)
     idle_since = time.time()
     try:
         while True:
@@ -195,7 +198,8 @@ def _launch(a, dispatch: str, script: str) -> dict | None:
             log("offer_unavailable", dispatch=dispatch, offer="local", detail=p.stderr.strip()[-200:])
             return None
         return {"id": name, "offer": "local", "gpu": "local", "bid": 0.0, "geo": "home", "launched": time.time()}
-    offers = json.loads(_vast(["search", "offers", OFFER_QUERY, "-i", "-o", "dph_total", "--raw"]) or "[]")
+    query = f"{OFFER_QUERY} {a.offer_filter}".strip()
+    offers = json.loads(_vast(["search", "offers", query, "-i", "-o", "dph_total", "--raw"]) or "[]")
     for o in offers[:8]:
         bid = round(max(o.get("min_bid") or 0, 0.0) * a.bid_factor + 0.005, 3)
         if bid > a.max_bid:
