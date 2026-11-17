@@ -29,7 +29,8 @@ localizing phones against those maps. Our fork is based on `main` (May 2026); we
 
 1. **Fast prior-pose mapper.** Start frames at their capture poses and refine with pose-prior bundle adjustment
    instead of incremental mapping. Merging a recording into a ~2,000-image map: ~40 min instead of 4–6+ h; a full
-   8,370-image, three-recording house map builds in 35 min. `dev_hh`'s merge flow still maps incrementally.
+   8,370-image, three-recording house map builds in 35 min. `dev_hh`'s merge flow still maps incrementally. Merges
+   also reuse the base map build's features and matches (-18% build time on that map, same localization quality).
 2. **Merge registration must follow heading drift.** A new recording registered to the map with one rigid
    transform (as `dev_hh`'s align step does with yaw/scale/translation) left part of our house as a second copy
    rotated 32°: the X5's odometry heading drifted 32° over a 14-minute walk. Phones then localized confidently on

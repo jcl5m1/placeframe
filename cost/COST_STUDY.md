@@ -40,8 +40,11 @@ an Insta360 X5 house capture and a 3-recording house map · **Code:** `cost/` (s
   are already placed in one model by their priors, and the bridge would add a few hundred matches, so it was not
   built. The real 3-recording merge is a genuinely connected large map and lands on the same line.
 - **Where the time goes now:** in joined maps, feature extraction (~33%) and matching (~36%) dominate; mapping is
-  ~22%. For merges into an existing map, reusing the base map's features and matches would remove most of the
-  base images' share (estimate: 30–50% of a merge, depending on how much of the map is new). Not built yet.
+  ~22%. Merges now reuse the base map build's features and matches: on a Fairhills merge (8,748 images, 46% of them
+  already in the map) the build took 1,700 s instead of 2,075 s (-18%) with the same localization quality; matches
+  were reusable for only 27% of pairs, because the map's images get new pose priors in a merge and many
+  nearest-neighbour pairs change. Kept outputs cost ~0.25 GB per 1,000 images, pruned nightly for maps that are no
+  longer active.
 - Preprocessing of each X5 recording (calibration, odometry, stitching) runs on the CPU, ~25 min per 14-min
   recording; odometry and stitching now run side by side (~5 min saved), and a second recording's preprocessing
   overlaps the first one's reconstruction.
@@ -123,7 +126,7 @@ app downloads a ~1 MB point cloud per session; query images go straight to the G
    avoid paying egress for every scale-up. Keeping a few GPUs warm through sessions also cuts map loads.
 3. **Pack more per GPU:** two localizer processes per GPU (sessions routed by id) raised throughput ~20% (done);
    the GPU is still ~25% idle, so the API and CPU-side work are the next limit.
-4. **Reuse base features and matches in merges** (30–50% of a merge, estimated).
+4. **Reuse base features and matches in merges** (done: -18% on a merge with half its images already mapped).
 5. **Rent for parallel builds, not single venue builds.**
 
 ## Assumptions and caveats
