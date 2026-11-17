@@ -101,6 +101,99 @@
         "deprecated": false
       }
     },
+    "/localization/track": {
+      "post": {
+        "summary": "LocalizeTracked",
+        "operationId": "localize_tracked",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/TrackedLocalizationRequest"
+              },
+              "encoding": {
+                "camera_config": {
+                  "contentType": "application/json",
+                  "explode": false,
+                  "allowReserved": false
+                },
+                "metrics": {
+                  "contentType": "application/json",
+                  "explode": false,
+                  "allowReserved": false
+                },
+                "odometry_from_camera": {
+                  "contentType": "application/json",
+                  "explode": false,
+                  "allowReserved": false
+                },
+                "reconstruction_ids": {
+                  "contentType": "application/json",
+                  "explode": false,
+                  "allowReserved": false
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Document created, URL follows",
+            "headers": {},
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackedLocalization"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request syntax or unsupported method",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "status_code": {
+                      "type": "integer"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "extra": {
+                      "additionalProperties": {},
+                      "anyOf": [
+                        {
+                          "type": "object"
+                        },
+                        {
+                          "type": "array",
+                          "items": {}
+                        }
+                      ],
+                      "nullable": true
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "detail",
+                    "status_code"
+                  ],
+                  "description": "Validation Exception",
+                  "example": {
+                    "status_code": 400,
+                    "detail": "Bad Request",
+                    "extra": {}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "deprecated": false
+      }
+    },
     "/version": {
       "get": {
         "summary": "GetLocalizerVersion",
@@ -521,6 +614,107 @@
         "type": "object",
         "required": [],
         "title": "ReconstructionMetrics"
+      },
+      "TrackedLocalization": {
+        "properties": {
+          "id": {
+            "nullable": true,
+            "type": "string",
+            "format": "uuid"
+          },
+          "probability": {
+            "type": "number"
+          },
+          "sigma_m": {
+            "nullable": true,
+            "type": "number"
+          },
+          "fixes": {
+            "type": "integer"
+          },
+          "hypotheses": {
+            "type": "integer"
+          },
+          "unknown": {
+            "type": "number"
+          },
+          "camera_from_map": {
+            "nullable": true,
+            "$ref": "#/components/schemas/Transform"
+          },
+          "odometry_from_map": {
+            "nullable": true,
+            "$ref": "#/components/schemas/Transform"
+          },
+          "frame_candidates": {
+            "type": "integer"
+          },
+          "frame_agreed": {
+            "type": "boolean"
+          },
+          "frame_confidence": {
+            "nullable": true,
+            "type": "number"
+          },
+          "frame_inliers": {
+            "nullable": true,
+            "type": "integer"
+          },
+          "frame_source": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fixes",
+          "frame_agreed",
+          "frame_candidates",
+          "hypotheses",
+          "probability",
+          "unknown"
+        ],
+        "title": "TrackedLocalization"
+      },
+      "TrackedLocalizationRequest": {
+        "properties": {
+          "reconstruction_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array"
+          },
+          "metrics": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ReconstructionMetrics"
+            },
+            "type": "object"
+          },
+          "camera_config": {
+            "$ref": "#/components/schemas/PinholeCameraConfig"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "odometry_from_camera": {
+            "$ref": "#/components/schemas/Transform"
+          },
+          "image": {
+            "type": "string",
+            "format": "binary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "camera_config",
+          "image",
+          "metrics",
+          "odometry_from_camera",
+          "reconstruction_ids",
+          "session_id"
+        ],
+        "title": "TrackedLocalizationRequest"
       },
       "Transform": {
         "properties": {

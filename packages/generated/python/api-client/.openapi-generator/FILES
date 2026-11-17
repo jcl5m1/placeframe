@@ -61,6 +61,7 @@ placeframe_api_client/models/reconstruction_read.py
 placeframe_api_client/models/reconstruction_status.py
 placeframe_api_client/models/rig_camera_config.py
 placeframe_api_client/models/rig_config.py
+placeframe_api_client/models/tracked_map_localization.py
 placeframe_api_client/models/transform.py
 placeframe_api_client/py.typed
 placeframe_api_client/rest.py

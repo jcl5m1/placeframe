@@ -86,6 +86,7 @@ Class | Method | HTTP request | Description
 ------------ | ------------- | ------------- | -------------
 *DefaultApi* | [**get_localizer_version**](docs/DefaultApi.md#get_localizer_version) | **GET** /version | GetLocalizerVersion
 *DefaultApi* | [**localize_image**](docs/DefaultApi.md#localize_image) | **POST** /localization | LocalizeImage
+*DefaultApi* | [**localize_tracked**](docs/DefaultApi.md#localize_tracked) | **POST** /localization/track | LocalizeTracked
 
 
 ## Documentation For Models
@@ -99,6 +100,7 @@ Class | Method | HTTP request | Description
  - [LocalizeImage400ResponseExtra](docs/LocalizeImage400ResponseExtra.md)
  - [PinholeCameraConfig](docs/PinholeCameraConfig.md)
  - [ReconstructionMetrics](docs/ReconstructionMetrics.md)
+ - [TrackedLocalization](docs/TrackedLocalization.md)
  - [Transform](docs/Transform.md)
 
 

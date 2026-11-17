@@ -1259,6 +1259,48 @@ paths:
       summary: LocalizeImage
       tags:
       - Default
+  /localize/track:
+    post:
+      deprecated: false
+      operationId: localize_tracked
+      requestBody:
+        content:
+          multipart/form-data:
+            encoding:
+              camera_config:
+                allowReserved: false
+                contentType: application/json
+                explode: false
+                style: form
+              map_ids:
+                allowReserved: false
+                contentType: application/json
+                explode: false
+                style: form
+              odometry_from_camera:
+                allowReserved: false
+                contentType: application/json
+                explode: false
+                style: form
+            schema:
+              $ref: "#/components/schemas/TrackedLocalizationRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackedMapLocalization"
+          description: "Document created, URL follows"
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/get_capture_sessions_400_response"
+          description: Bad request syntax or unsupported method
+      summary: LocalizeTracked
+      tags:
+      - Default
   /localize/version:
     get:
       deprecated: false
@@ -4448,6 +4490,117 @@ components:
       - cameras
       - id
       title: RigConfig
+      type: object
+    TrackedLocalizationRequest:
+      properties:
+        map_ids:
+          items:
+            format: uuid
+            type: string
+          type: array
+        camera_config:
+          $ref: "#/components/schemas/PinholeCameraConfig"
+        session_id:
+          type: string
+        odometry_from_camera:
+          $ref: "#/components/schemas/Transform"
+        image:
+          format: binary
+          type: string
+      required:
+      - camera_config
+      - image
+      - map_ids
+      - odometry_from_camera
+      - session_id
+      title: TrackedLocalizationRequest
+      type: object
+    TrackedMapLocalization:
+      example:
+        frame_source: frame_source
+        hypotheses: 5
+        odometry_from_map_transform:
+          rotation:
+            w: 5.962133916683182
+            x: 0.8008281904610115
+            "y": 6.027456183070403
+            z: 1.4658129805029452
+          translation:
+            x: 5.637376656633329
+            "y": 2.3021358869347655
+            z: 7.061401241503109
+        frame_inliers: 9
+        sigma_m: 6.027456183070403
+        probability: 0.8008281904610115
+        fixes: 1
+        map_transform:
+          rotation:
+            w: 5.962133916683182
+            x: 0.8008281904610115
+            "y": 6.027456183070403
+            z: 1.4658129805029452
+          translation:
+            x: 5.637376656633329
+            "y": 2.3021358869347655
+            z: 7.061401241503109
+        frame_agreed: true
+        unknown: 5.637376656633329
+        frame_confidence: 7.061401241503109
+        map_id: 046b6c7f-0b8a-43b9-b35d-6489e6daee91
+        camera_from_map_transform:
+          rotation:
+            w: 5.962133916683182
+            x: 0.8008281904610115
+            "y": 6.027456183070403
+            z: 1.4658129805029452
+          translation:
+            x: 5.637376656633329
+            "y": 2.3021358869347655
+            z: 7.061401241503109
+        frame_candidates: 2
+      properties:
+        map_id:
+          format: uuid
+          nullable: true
+          type: string
+        probability:
+          type: number
+        sigma_m:
+          nullable: true
+          type: number
+        fixes:
+          type: integer
+        hypotheses:
+          type: integer
+        unknown:
+          type: number
+        camera_from_map_transform:
+          $ref: "#/components/schemas/Transform"
+        odometry_from_map_transform:
+          $ref: "#/components/schemas/Transform"
+        map_transform:
+          $ref: "#/components/schemas/Transform"
+        frame_candidates:
+          type: integer
+        frame_agreed:
+          type: boolean
+        frame_confidence:
+          nullable: true
+          type: number
+        frame_inliers:
+          nullable: true
+          type: integer
+        frame_source:
+          nullable: true
+          type: string
+      required:
+      - fixes
+      - frame_agreed
+      - frame_candidates
+      - hypotheses
+      - probability
+      - unknown
+      title: TrackedMapLocalization
       type: object
     Transform:
       example:

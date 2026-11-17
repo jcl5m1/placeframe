@@ -62,5 +62,6 @@ from placeframe_api_client.models.reconstruction_read import ReconstructionRead
 from placeframe_api_client.models.reconstruction_status import ReconstructionStatus
 from placeframe_api_client.models.rig_camera_config import RigCameraConfig
 from placeframe_api_client.models.rig_config import RigConfig
+from placeframe_api_client.models.tracked_map_localization import TrackedMapLocalization
 from placeframe_api_client.models.transform import Transform
 

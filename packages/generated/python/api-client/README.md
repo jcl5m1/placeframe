@@ -129,6 +129,7 @@ Class | Method | HTTP request | Description
 *DefaultApi* | [**get_reconstructions**](docs/DefaultApi.md#get_reconstructions) | **GET** /reconstructions | GetReconstructions
 *DefaultApi* | [**list_localization_evaluations**](docs/DefaultApi.md#list_localization_evaluations) | **GET** /reconstructions/{reconstruction_id}/localization-evaluations | ListLocalizationEvaluations
 *DefaultApi* | [**localize_image**](docs/DefaultApi.md#localize_image) | **POST** /localize | LocalizeImage
+*DefaultApi* | [**localize_tracked**](docs/DefaultApi.md#localize_tracked) | **POST** /localize/track | LocalizeTracked
 *DefaultApi* | [**push_zed_box_logs**](docs/DefaultApi.md#push_zed_box_logs) | **POST** /zed-boxes/logs | PushZedBoxLogs
 *DefaultApi* | [**request_lease**](docs/DefaultApi.md#request_lease) | **POST** /internal/leases/request | RequestLease
 *DefaultApi* | [**retry_reconstruction**](docs/DefaultApi.md#retry_reconstruction) | **PUT** /reconstructions/{id}/retry | RetryReconstruction
@@ -195,6 +196,7 @@ Class | Method | HTTP request | Description
  - [ReconstructionStatus](docs/ReconstructionStatus.md)
  - [RigCameraConfig](docs/RigCameraConfig.md)
  - [RigConfig](docs/RigConfig.md)
+ - [TrackedMapLocalization](docs/TrackedMapLocalization.md)
  - [Transform](docs/Transform.md)
 
 

@@ -77,6 +77,7 @@ __all__ = [
     "ReconstructionStatus",
     "RigCameraConfig",
     "RigConfig",
+    "TrackedMapLocalization",
     "Transform",
 ]
 
@@ -144,5 +145,6 @@ from placeframe_api_client.models.reconstruction_read import ReconstructionRead 
 from placeframe_api_client.models.reconstruction_status import ReconstructionStatus as ReconstructionStatus
 from placeframe_api_client.models.rig_camera_config import RigCameraConfig as RigCameraConfig
 from placeframe_api_client.models.rig_config import RigConfig as RigConfig
+from placeframe_api_client.models.tracked_map_localization import TrackedMapLocalization as TrackedMapLocalization
 from placeframe_api_client.models.transform import Transform as Transform
 

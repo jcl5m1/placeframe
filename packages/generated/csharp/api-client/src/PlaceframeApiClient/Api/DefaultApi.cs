@@ -799,6 +799,32 @@ namespace PlaceframeApiClient.Api
         /// <returns>ApiResponse of List&lt;MapLocalization&gt;</returns>
         ApiResponse<List<MapLocalization>> LocalizeImageWithHttpInfo(List<Guid> mapIds, PinholeCameraConfig cameraConfig, AxisConvention axisConvention, FileParameter image, int? retrievalTopK = default, double? ransacThreshold = default);
         /// <summary>
+        /// LocalizeTracked
+        /// </summary>
+        /// <exception cref="PlaceframeApiClient.Client.ApiException">Thrown when fails to make API call</exception>
+        /// <param name="mapIds"></param>
+        /// <param name="cameraConfig"></param>
+        /// <param name="sessionId"></param>
+        /// <param name="odometryFromCamera"></param>
+        /// <param name="image"></param>
+        /// <returns>TrackedMapLocalization</returns>
+        TrackedMapLocalization LocalizeTracked(List<Guid> mapIds, PinholeCameraConfig cameraConfig, string sessionId, Transform odometryFromCamera, FileParameter image);
+
+        /// <summary>
+        /// LocalizeTracked
+        /// </summary>
+        /// <remarks>
+        /// 
+        /// </remarks>
+        /// <exception cref="PlaceframeApiClient.Client.ApiException">Thrown when fails to make API call</exception>
+        /// <param name="mapIds"></param>
+        /// <param name="cameraConfig"></param>
+        /// <param name="sessionId"></param>
+        /// <param name="odometryFromCamera"></param>
+        /// <param name="image"></param>
+        /// <returns>ApiResponse of TrackedMapLocalization</returns>
+        ApiResponse<TrackedMapLocalization> LocalizeTrackedWithHttpInfo(List<Guid> mapIds, PinholeCameraConfig cameraConfig, string sessionId, Transform odometryFromCamera, FileParameter image);
+        /// <summary>
         /// PushZedBoxLogs
         /// </summary>
         /// <exception cref="PlaceframeApiClient.Client.ApiException">Thrown when fails to make API call</exception>
@@ -2029,6 +2055,37 @@ namespace PlaceframeApiClient.Api
         /// <param name="cancellationToken">Cancellation Token to cancel the request.</param>
         /// <returns>Task of ApiResponse (List&lt;MapLocalization&gt;)</returns>
         Cysharp.Threading.Tasks.UniTask<ApiResponse<List<MapLocalization>>> LocalizeImageWithHttpInfoAsync(List<Guid> mapIds, PinholeCameraConfig cameraConfig, AxisConvention axisConvention, FileParameter image, int? retrievalTopK = default, double? ransacThreshold = default, System.Threading.CancellationToken cancellationToken = default);
+        /// <summary>
+        /// LocalizeTracked
+        /// </summary>
+        /// <remarks>
+        /// 
+        /// </remarks>
+        /// <exception cref="PlaceframeApiClient.Client.ApiException">Thrown when fails to make API call</exception>
+        /// <param name="mapIds"></param>
+        /// <param name="cameraConfig"></param>
+        /// <param name="sessionId"></param>
+        /// <param name="odometryFromCamera"></param>
+        /// <param name="image"></param>
+        /// <param name="cancellationToken">Cancellation Token to cancel the request.</param>
+        /// <returns>Task of TrackedMapLocalization</returns>
+        Cysharp.Threading.Tasks.UniTask<TrackedMapLocalization> LocalizeTrackedAsync(List<Guid> mapIds, PinholeCameraConfig cameraConfig, string sessionId, Transform odometryFromCamera, FileParameter image, System.Threading.CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// LocalizeTracked
+        /// </summary>
+        /// <remarks>
+        /// 
+        /// </remarks>
+        /// <exception cref="PlaceframeApiClient.Client.ApiException">Thrown when fails to make API call</exception>
+        /// <param name="mapIds"></param>
+        /// <param name="cameraConfig"></param>
+        /// <param name="sessionId"></param>
+        /// <param name="odometryFromCamera"></param>
+        /// <param name="image"></param>
+        /// <param name="cancellationToken">Cancellation Token to cancel the request.</param>
+        /// <returns>Task of ApiResponse (TrackedMapLocalization)</returns>
+        Cysharp.Threading.Tasks.UniTask<ApiResponse<TrackedMapLocalization>> LocalizeTrackedWithHttpInfoAsync(List<Guid> mapIds, PinholeCameraConfig cameraConfig, string sessionId, Transform odometryFromCamera, FileParameter image, System.Threading.CancellationToken cancellationToken = default);
         /// <summary>
         /// PushZedBoxLogs
         /// </summary>
@@ -7341,6 +7398,229 @@ namespace PlaceframeApiClient.Api
             if (this.ExceptionFactory != null)
             {
                 Exception _exception = this.ExceptionFactory("LocalizeImage", localVarResponse);
+                if (_exception != null) throw _exception;
+            }
+
+            return localVarResponse;
+        }
+
+        /// <summary>
+        /// LocalizeTracked 
+        /// </summary>
+        /// <exception cref="PlaceframeApiClient.Client.ApiException">Thrown when fails to make API call</exception>
+        /// <param name="mapIds"></param>
+        /// <param name="cameraConfig"></param>
+        /// <param name="sessionId"></param>
+        /// <param name="odometryFromCamera"></param>
+        /// <param name="image"></param>
+        /// <returns>TrackedMapLocalization</returns>
+        public TrackedMapLocalization LocalizeTracked(List<Guid> mapIds, PinholeCameraConfig cameraConfig, string sessionId, Transform odometryFromCamera, FileParameter image)
+        {
+            PlaceframeApiClient.Client.ApiResponse<TrackedMapLocalization> localVarResponse = LocalizeTrackedWithHttpInfo(mapIds, cameraConfig, sessionId, odometryFromCamera, image);
+            return localVarResponse.Data;
+        }
+
+        /// <summary>
+        /// LocalizeTracked 
+        /// </summary>
+        /// <exception cref="PlaceframeApiClient.Client.ApiException">Thrown when fails to make API call</exception>
+        /// <param name="mapIds"></param>
+        /// <param name="cameraConfig"></param>
+        /// <param name="sessionId"></param>
+        /// <param name="odometryFromCamera"></param>
+        /// <param name="image"></param>
+        /// <returns>ApiResponse of TrackedMapLocalization</returns>
+        public PlaceframeApiClient.Client.ApiResponse<TrackedMapLocalization> LocalizeTrackedWithHttpInfo(List<Guid> mapIds, PinholeCameraConfig cameraConfig, string sessionId, Transform odometryFromCamera, FileParameter image)
+        {
+            // verify the required parameter 'mapIds' is set
+            if (mapIds == null)
+                throw new PlaceframeApiClient.Client.ApiException(400, "Missing required parameter 'mapIds' when calling DefaultApi->LocalizeTracked");
+
+            // verify the required parameter 'cameraConfig' is set
+            if (cameraConfig == null)
+                throw new PlaceframeApiClient.Client.ApiException(400, "Missing required parameter 'cameraConfig' when calling DefaultApi->LocalizeTracked");
+
+            // verify the required parameter 'sessionId' is set
+            if (sessionId == null)
+                throw new PlaceframeApiClient.Client.ApiException(400, "Missing required parameter 'sessionId' when calling DefaultApi->LocalizeTracked");
+
+            // verify the required parameter 'odometryFromCamera' is set
+            if (odometryFromCamera == null)
+                throw new PlaceframeApiClient.Client.ApiException(400, "Missing required parameter 'odometryFromCamera' when calling DefaultApi->LocalizeTracked");
+
+            // verify the required parameter 'image' is set
+            if (image == null)
+                throw new PlaceframeApiClient.Client.ApiException(400, "Missing required parameter 'image' when calling DefaultApi->LocalizeTracked");
+
+            PlaceframeApiClient.Client.RequestOptions localVarRequestOptions = new PlaceframeApiClient.Client.RequestOptions();
+
+            string[] _contentTypes = new string[] {
+                "multipart/form-data"
+            };
+
+            // to determine the Accept header
+            string[] _accepts = new string[] {
+                "application/json"
+            };
+
+            var localVarContentType = PlaceframeApiClient.Client.ClientUtils.SelectHeaderContentType(_contentTypes);
+            if (localVarContentType != null) localVarRequestOptions.HeaderParameters.Add("Content-Type", localVarContentType);
+
+            var localVarAccept = PlaceframeApiClient.Client.ClientUtils.SelectHeaderAccept(_accepts);
+            if (localVarAccept != null) localVarRequestOptions.HeaderParameters.Add("Accept", localVarAccept);
+
+            // COMPLEX TYPE: Serialize to JSON and add as a "File" with application/json header
+            if (mapIds != null)
+            {
+                var _json_mapIds = Newtonsoft.Json.JsonConvert.SerializeObject(mapIds, this.ApiClient.SerializerSettings);
+                var _stream_mapIds = new System.IO.MemoryStream(System.Text.Encoding.UTF8.GetBytes(_json_mapIds));
+
+                // Add as a file parameter with null filename and application/json content type
+                localVarRequestOptions.FileParameters.Add("map_ids", new PlaceframeApiClient.Client.FileParameter(null, "application/json", _stream_mapIds));
+            }
+            // COMPLEX TYPE: Serialize to JSON and add as a "File" with application/json header
+            if (cameraConfig != null)
+            {
+                var _json_cameraConfig = Newtonsoft.Json.JsonConvert.SerializeObject(cameraConfig, this.ApiClient.SerializerSettings);
+                var _stream_cameraConfig = new System.IO.MemoryStream(System.Text.Encoding.UTF8.GetBytes(_json_cameraConfig));
+
+                // Add as a file parameter with null filename and application/json content type
+                localVarRequestOptions.FileParameters.Add("camera_config", new PlaceframeApiClient.Client.FileParameter(null, "application/json", _stream_cameraConfig));
+            }
+            // Primitive types (int, string, bool) go as standard form fields
+            localVarRequestOptions.FormParameters.Add("session_id", PlaceframeApiClient.Client.ClientUtils.ParameterToString(sessionId));
+            // COMPLEX TYPE: Serialize to JSON and add as a "File" with application/json header
+            if (odometryFromCamera != null)
+            {
+                var _json_odometryFromCamera = Newtonsoft.Json.JsonConvert.SerializeObject(odometryFromCamera, this.ApiClient.SerializerSettings);
+                var _stream_odometryFromCamera = new System.IO.MemoryStream(System.Text.Encoding.UTF8.GetBytes(_json_odometryFromCamera));
+
+                // Add as a file parameter with null filename and application/json content type
+                localVarRequestOptions.FileParameters.Add("odometry_from_camera", new PlaceframeApiClient.Client.FileParameter(null, "application/json", _stream_odometryFromCamera));
+            }
+            localVarRequestOptions.FileParameters.Add("image", image);
+
+
+            // make the HTTP request
+            var localVarResponse = this.Client.Post<TrackedMapLocalization>("/localize/track", localVarRequestOptions, this.Configuration);
+
+            if (this.ExceptionFactory != null)
+            {
+                Exception _exception = this.ExceptionFactory("LocalizeTracked", localVarResponse);
+                if (_exception != null) throw _exception;
+            }
+
+            return localVarResponse;
+        }
+
+        /// <summary>
+        /// LocalizeTracked 
+        /// </summary>
+        /// <exception cref="PlaceframeApiClient.Client.ApiException">Thrown when fails to make API call</exception>
+        /// <param name="mapIds"></param>
+        /// <param name="cameraConfig"></param>
+        /// <param name="sessionId"></param>
+        /// <param name="odometryFromCamera"></param>
+        /// <param name="image"></param>
+        /// <param name="cancellationToken">Cancellation Token to cancel the request.</param>
+        /// <returns>Task of TrackedMapLocalization</returns>
+        public async Cysharp.Threading.Tasks.UniTask<TrackedMapLocalization> LocalizeTrackedAsync(List<Guid> mapIds, PinholeCameraConfig cameraConfig, string sessionId, Transform odometryFromCamera, FileParameter image, System.Threading.CancellationToken cancellationToken = default)
+        {
+            PlaceframeApiClient.Client.ApiResponse<TrackedMapLocalization> localVarResponse = await LocalizeTrackedWithHttpInfoAsync(mapIds, cameraConfig, sessionId, odometryFromCamera, image, cancellationToken);
+            return localVarResponse.Data;
+        }
+
+        /// <summary>
+        /// LocalizeTracked 
+        /// </summary>
+        /// <exception cref="PlaceframeApiClient.Client.ApiException">Thrown when fails to make API call</exception>
+        /// <param name="mapIds"></param>
+        /// <param name="cameraConfig"></param>
+        /// <param name="sessionId"></param>
+        /// <param name="odometryFromCamera"></param>
+        /// <param name="image"></param>
+        /// <param name="cancellationToken">Cancellation Token to cancel the request.</param>
+        /// <returns>Task of ApiResponse (TrackedMapLocalization)</returns>
+        public async Cysharp.Threading.Tasks.UniTask<PlaceframeApiClient.Client.ApiResponse<TrackedMapLocalization>> LocalizeTrackedWithHttpInfoAsync(List<Guid> mapIds, PinholeCameraConfig cameraConfig, string sessionId, Transform odometryFromCamera, FileParameter image, System.Threading.CancellationToken cancellationToken = default)
+        {
+            // verify the required parameter 'mapIds' is set
+            if (mapIds == null)
+                throw new PlaceframeApiClient.Client.ApiException(400, "Missing required parameter 'mapIds' when calling DefaultApi->LocalizeTracked");
+
+            // verify the required parameter 'cameraConfig' is set
+            if (cameraConfig == null)
+                throw new PlaceframeApiClient.Client.ApiException(400, "Missing required parameter 'cameraConfig' when calling DefaultApi->LocalizeTracked");
+
+            // verify the required parameter 'sessionId' is set
+            if (sessionId == null)
+                throw new PlaceframeApiClient.Client.ApiException(400, "Missing required parameter 'sessionId' when calling DefaultApi->LocalizeTracked");
+
+            // verify the required parameter 'odometryFromCamera' is set
+            if (odometryFromCamera == null)
+                throw new PlaceframeApiClient.Client.ApiException(400, "Missing required parameter 'odometryFromCamera' when calling DefaultApi->LocalizeTracked");
+
+            // verify the required parameter 'image' is set
+            if (image == null)
+                throw new PlaceframeApiClient.Client.ApiException(400, "Missing required parameter 'image' when calling DefaultApi->LocalizeTracked");
+
+
+            PlaceframeApiClient.Client.RequestOptions localVarRequestOptions = new PlaceframeApiClient.Client.RequestOptions();
+
+            string[] _contentTypes = new string[] {
+                "multipart/form-data"
+            };
+
+            // to determine the Accept header
+            string[] _accepts = new string[] {
+                "application/json"
+            };
+
+
+            var localVarContentType = PlaceframeApiClient.Client.ClientUtils.SelectHeaderContentType(_contentTypes);
+            if (localVarContentType != null) localVarRequestOptions.HeaderParameters.Add("Content-Type", localVarContentType);
+
+            var localVarAccept = PlaceframeApiClient.Client.ClientUtils.SelectHeaderAccept(_accepts);
+            if (localVarAccept != null) localVarRequestOptions.HeaderParameters.Add("Accept", localVarAccept);
+
+            // COMPLEX TYPE: Serialize to JSON and add as a "File" with application/json header
+            if (mapIds != null)
+            {
+                var _json_mapIds = Newtonsoft.Json.JsonConvert.SerializeObject(mapIds, this.ApiClient.SerializerSettings);
+                var _stream_mapIds = new System.IO.MemoryStream(System.Text.Encoding.UTF8.GetBytes(_json_mapIds));
+
+                // Add as a file parameter with null filename and application/json content type
+                localVarRequestOptions.FileParameters.Add("map_ids", new PlaceframeApiClient.Client.FileParameter(null, "application/json", _stream_mapIds));
+            }
+            // COMPLEX TYPE: Serialize to JSON and add as a "File" with application/json header
+            if (cameraConfig != null)
+            {
+                var _json_cameraConfig = Newtonsoft.Json.JsonConvert.SerializeObject(cameraConfig, this.ApiClient.SerializerSettings);
+                var _stream_cameraConfig = new System.IO.MemoryStream(System.Text.Encoding.UTF8.GetBytes(_json_cameraConfig));
+
+                // Add as a file parameter with null filename and application/json content type
+                localVarRequestOptions.FileParameters.Add("camera_config", new PlaceframeApiClient.Client.FileParameter(null, "application/json", _stream_cameraConfig));
+            }
+            // Primitive types (int, string, bool) go as standard form fields
+            localVarRequestOptions.FormParameters.Add("session_id", PlaceframeApiClient.Client.ClientUtils.ParameterToString(sessionId));
+            // COMPLEX TYPE: Serialize to JSON and add as a "File" with application/json header
+            if (odometryFromCamera != null)
+            {
+                var _json_odometryFromCamera = Newtonsoft.Json.JsonConvert.SerializeObject(odometryFromCamera, this.ApiClient.SerializerSettings);
+                var _stream_odometryFromCamera = new System.IO.MemoryStream(System.Text.Encoding.UTF8.GetBytes(_json_odometryFromCamera));
+
+                // Add as a file parameter with null filename and application/json content type
+                localVarRequestOptions.FileParameters.Add("odometry_from_camera", new PlaceframeApiClient.Client.FileParameter(null, "application/json", _stream_odometryFromCamera));
+            }
+            localVarRequestOptions.FileParameters.Add("image", image);
+
+
+            // make the HTTP request
+
+            var localVarResponse = await this.AsynchronousClient.PostAsync<TrackedMapLocalization>("/localize/track", localVarRequestOptions, this.Configuration, cancellationToken).AsUniTask();
+
+            if (this.ExceptionFactory != null)
+            {
+                Exception _exception = this.ExceptionFactory("LocalizeTracked", localVarResponse);
                 if (_exception != null) throw _exception;
             }
 
