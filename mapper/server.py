@@ -21,6 +21,7 @@ import json
 import os
 import queue
 import re
+import struct
 import asyncio
 import subprocess
 import sys
@@ -32,7 +33,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
@@ -237,6 +238,29 @@ def _export_folders() -> None:
 
 def _clean_folder(folder: str) -> str:
     return "/".join(part.strip() for part in folder.replace("\\", "/").split("/") if part.strip())
+
+
+@app.get("/api/maps/{map_id}/points")
+async def map_points(map_id: str, request: Request, limit: int = 80_000, who: str = Depends(user)):
+    """The map's 3D points (reconstruction frame, the frame localizations are returned in) for the phone app's
+    top-down view: little-endian float32 x, y, z triples, the most-observed points first, at most `limit`."""
+    async with httpx.AsyncClient(timeout=30) as c:  # the caller must be able to see the map
+        r = await c.get(f"{SERVER}/localization-maps/{map_id}", headers={"Authorization": request.headers["authorization"]})
+    if r.status_code != 200:
+        raise HTTPException(r.status_code, "map not found")
+    src = VIEWER_DIR / "maps" / map_id / "map.json"
+    if not src.is_file():
+        raise HTTPException(404, "no point cloud exported for this map yet")
+    key = (map_id, src.stat().st_mtime, limit)
+    if key not in _points_cache:
+        pts = json.loads(src.read_text())["points"]  # rows: x, y, z, r, g, b, observations
+        pts.sort(key=lambda p: -p[6])
+        _points_cache.clear()  # one map at a time is enough; the files are several MB
+        _points_cache[key] = struct.pack(f"<{3 * min(limit, len(pts))}f", *(v for p in pts[:limit] for v in p[:3]))
+    return Response(_points_cache[key], media_type="application/octet-stream")
+
+
+_points_cache: dict[tuple, bytes] = {}
 
 
 @app.get("/api/maps/{map_id}/contents")
