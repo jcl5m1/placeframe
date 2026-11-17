@@ -44,6 +44,7 @@ services:
     # Unset LOCALIZATION_RECORD_DIR to disable.
     environment:
       LOCALIZATION_RECORD_DIR: /recordings
+      LOCALIZER_TRACK_URLS: "http://localizer:8000,http://localizer:8001"
       # Reap leases whose worker stopped heart-beating (workers refresh every minute) after 10 min, so jobs
       # on preempted rented workers are re-queued quickly. Upstream default: 30.
       LEASE_TIMEOUT_MINUTES: "10"
@@ -89,6 +90,11 @@ services:
   localizer-cuda:
     logging: *bounded-logs
     extra_hosts: ["${PUBLIC_DOMAIN:?err}:172.17.0.1"]
+    environment:
+      LOCALIZER_TRACK_WORKERS: "2"
+    # Two localizer processes on one GPU (ports 8000 and 8001): the API sends each tracked session to one of them
+    # (LOCALIZER_TRACK_URLS); single-frame requests use 8000. One process left a third of the GPU idle.
+    entrypoint: ["bash", "-c", "cd /app/docker/localizer && (uv run --no-sync uvicorn src.main:app --host 0.0.0.0 --port 8001 &) && exec uv run --no-sync uvicorn src.main:app --host 0.0.0.0 --port 8000"]
     # Local extension, mounted over the image's source — no rebuild: POST /localization/track, localization of a
     # moving client with a per-session multi-hypothesis tracker (tracker.py) fed by per-place candidate poses
     # (tracked.py). The single-frame /localization is unchanged.
