@@ -14,5 +14,6 @@ RUN uv pip install --python /opt/uv/venv/bin/python --no-deps --reinstall /tmp/w
 # (no import check here: image builds have no GPU driver; verify with `docker run --gpus all ... import pycolmap`)
 
 COPY placeframe-patches/ /opt/uv/venv/lib/python3.13/site-packages/reconstructor/
+COPY placeframe-patches-core/ /opt/uv/venv/lib/python3.13/site-packages/core/
 COPY fleet/worker_entry.py /usr/local/bin/worker_entry.py
 ENTRYPOINT ["/opt/uv/venv/bin/python", "/usr/local/bin/worker_entry.py"]

@@ -61,6 +61,7 @@ def main() -> None:
     sessions = [s for s in rl.split_sessions(reqs, a.session_gap) if not is_tool_traffic(s)]
     api = PlaceframeApi()
     maps = ensure_maps(api, a.viewer, {m for s in sessions for r in s for m in r["request"]["map_ids"]} | set(a.map))
+    folders = map_folders()
     out = a.viewer / "sessions"
     out.mkdir(exist_ok=True)
     index = []
@@ -69,14 +70,28 @@ def main() -> None:
         doc = export_session(sid, s, out)
         finished = time.time() - s[-1]["_t"] > SETTLE_S
         if a.relocalize and finished:
+            # Only onto maps of the same place: maps in the same top-level folder as the session's own maps.
+            places = {top_folder(folders.get(mid, "")) for mid in doc["map_ids"]}
             for m in maps:
-                if m["id"] not in doc["map_ids"]:
+                if m["id"] not in doc["map_ids"] and top_folder(folders.get(m["id"], "")) in places:
                     doc["replays"][m["id"]] = relocalize(api, sid, s, m["id"], out)
         (out / f"{sid}.json").write_text(json.dumps(doc, separators=(",", ":")))
         index.append({k: doc[k] for k in ("id", "start", "duration_s", "user_agent", "map_ids", "requests", "localized")}
                      | {"replayed_on": sorted(doc["replays"]), "finished": finished})
     (out / "index.json").write_text(json.dumps(sorted(index, key=lambda x: x["start"], reverse=True), indent=1))
     print(f"{len(index)} sessions, {len(maps)} maps exported to {a.viewer}")
+
+
+def map_folders() -> dict[str, str]:
+    """The mapper's map folders (map id -> "house/earlier builds"): which maps belong to the same place."""
+    try:
+        return json.loads((Path.home() / "pf_mapper" / "map_folders.json").read_text())
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+def top_folder(folder: str) -> str:
+    return folder.split("/", 1)[0]
 
 
 def is_tool_traffic(s: list[dict]) -> bool:
@@ -89,18 +104,24 @@ def session_id(s: list[dict]) -> str:
 
 
 def ensure_maps(api: PlaceframeApi, viewer: Path, needed: set[str]) -> list[dict]:
+    """Every built map gets a viewer map (built once, then reused); the viewer groups them with the mapper's
+    folders. A map whose model cannot be read is skipped and retried on the next run."""
     known = {m["id"]: m for m in api.get("/localization-maps")}
-    wanted = [m for m in FEATURED if m in known] + sorted(needed - set(FEATURED) - {DEFAULT_MAP["id"]})
-    if (viewer / "maps").exists():
-        wanted += sorted(d.parent.name for d in (viewer / "maps").glob("*/map.json")
-                         if d.parent.name in known and d.parent.name not in wanted)
+    rest = sorted((m for m in known.values() if m["id"] not in FEATURED and m["id"] != DEFAULT_MAP["id"]),
+                  key=lambda m: m.get("created_at") or "", reverse=True)
+    wanted = [m for m in FEATURED if m in known] + [m["id"] for m in rest]
+    folders = map_folders()
     entries = []
     for mid in wanted:
-        if mid not in known:
-            continue
         dest = viewer / "maps" / mid / "map.json"
         if not dest.exists() or not (dest.parent / ".v2").exists():
-            build_viewer_map(known[mid], dest, viewer / DEFAULT_MAP["file"])
+            # Odometry overlays come from the house recording's first build: only meaningful on house maps.
+            reference = viewer / DEFAULT_MAP["file"] if folders.get(mid, "").startswith("house") else None
+            try:
+                build_viewer_map(known[mid], dest, reference)
+            except Exception as e:  # noqa: BLE001 - one unreadable model must not stop the others
+                print(f"viewer map for {known[mid].get('name') or mid}: skipped ({e!r})")
+                continue
             (dest.parent / ".v2").touch()
         entries.append({"id": mid, "name": known[mid].get("name") or mid[:8], "file": f"maps/{mid}/map.json"})
     entries.append({"id": DEFAULT_MAP["id"], "file": DEFAULT_MAP["file"],
@@ -109,7 +130,7 @@ def ensure_maps(api: PlaceframeApi, viewer: Path, needed: set[str]) -> list[dict
     return entries
 
 
-def build_viewer_map(m: dict, dest: Path, reference: Path) -> None:
+def build_viewer_map(m: dict, dest: Path, reference: Path | None) -> None:
     """Viewer map from the stored COLMAP model: points with their real observation counts, per-frame video
     timestamps (rig + ms from the image names), mapping gaps, and the odometry overlays of the reference viewer
     map carried over by a similarity fit on frames matched by timestamp."""
@@ -127,7 +148,8 @@ def build_viewer_map(m: dict, dest: Path, reference: Path) -> None:
         offset += ts[-1] + 5000  # later recordings follow on the time axis, after a visible break
     data = {"name": m.get("name") or m["id"], "map_id": m["id"], "points": pts, "cams": cams, "camsOrig": cams,
             "gaps": gaps, "rigs": len(rigs)}
-    data |= carry_overlays(reference, {t: c for (r, t), c in frames.items() if r == rigs[0]})
+    if reference is not None:
+        data |= carry_overlays(reference, {t: c for (r, t), c in frames.items() if r == rigs[0]})
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(json.dumps(data, separators=(",", ":")))
     print(f"viewer map for {data['name']}: {len(pts)} points, {len(cams)} frames, {len(gaps)} gaps, "

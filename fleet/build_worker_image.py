@@ -13,6 +13,8 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC = Path.home() / "github/placeframe/docker/reconstructor/src/reconstructor"
 PATCHES = ["colmap.py", "main.py", "pairs.py", "prior_mapper.py", "run_reconstruction.py", "checkpoints.py",
            "progress_publisher.py"]
+CORE_SRC = Path.home() / "github/placeframe/packages/python/core/src/core"
+CORE_PATCHES = ["opq.py", "lightglue.py"]
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--tag", default="placeframe-worker:local")
@@ -24,5 +26,10 @@ shutil.rmtree(stage, ignore_errors=True)
 stage.mkdir()
 for f in PATCHES:
     shutil.copy2(SRC / f, stage / f)
+core_stage = ROOT / "placeframe-patches-core"
+shutil.rmtree(core_stage, ignore_errors=True)
+core_stage.mkdir()
+for f in CORE_PATCHES:
+    shutil.copy2(CORE_SRC / f, core_stage / f)
 subprocess.run(["sg", "docker", "-c", f"docker build -f gpu/Dockerfile.worker -t {a.tag} ."], cwd=ROOT, check=True)
 print("built", a.tag)
