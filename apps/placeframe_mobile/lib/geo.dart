@@ -18,6 +18,8 @@ List<double> ecefFromGeodetic(double latitude, double longitude, double altitude
 class Pose {
   const Pose(this.q, this.t);
 
+  static const identity = Pose([0, 0, 0, 1], [0, 0, 0]);
+
   final List<double> q; // x, y, z, w
   final List<double> t;
 
@@ -26,6 +28,11 @@ class Pose {
     double d(Map<String, dynamic> m, String k) => (m[k] as num).toDouble();
     return Pose([d(r, 'x'), d(r, 'y'), d(r, 'z'), d(r, 'w')], [d(p, 'x'), d(p, 'y'), d(p, 'z')]);
   }
+
+  Map<String, dynamic> toTransformJson() => {
+        'translation': {'x': t[0], 'y': t[1], 'z': t[2]},
+        'rotation': {'x': q[0], 'y': q[1], 'z': q[2], 'w': q[3]},
+      };
 
   // From a column-major 4x4 matrix (ARKit simd_float4x4 and ARCore Pose.toMatrix both use column-major).
   factory Pose.fromColumnMajor(List<double> m) {
@@ -45,6 +52,41 @@ class Pose {
     final qi = [-q[0], -q[1], -q[2], q[3]];
     final ti = _rotate(qi, t);
     return Pose(qi, [-ti[0], -ti[1], -ti[2]]);
+  }
+
+  // this ∘ o: the transform applying o first, then this.
+  Pose operator *(Pose o) {
+    final r = _rotate(q, o.t);
+    return Pose(_mul(q, o.q), [r[0] + t[0], r[1] + t[1], r[2] + t[2]]);
+  }
+
+  // The rotation as a row-major 3x3 matrix, for transforming many points.
+  List<double> get rotationMatrix {
+    final x = q[0], y = q[1], z = q[2], w = q[3];
+    return [
+      1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w),
+      2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w),
+      2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y),
+    ];
+  }
+
+  // Rotation angle between the two orientations, radians.
+  double angleTo(Pose o) {
+    final d = (q[0] * o.q[0] + q[1] * o.q[1] + q[2] * o.q[2] + q[3] * o.q[3]).abs();
+    return 2 * math.acos(math.min(1.0, d));
+  }
+
+  // The rigid motion that moves [from] the fraction [k] of the way to [to], rotating about from's position:
+  // applied to from it gives from.t + k (to.t - from.t), with k of the rotation from→to.
+  static Pose nudge(Pose from, Pose to, double k) {
+    var r = _mul(to.q, [-from.q[0], -from.q[1], -from.q[2], from.q[3]]);
+    if (r[3] < 0) r = [-r[0], -r[1], -r[2], -r[3]];
+    final half = math.acos(math.min(1.0, r[3])), s = math.sin(half);
+    final qk = s < 1e-9
+        ? const [0.0, 0.0, 0.0, 1.0]
+        : [r[0] / s * math.sin(k * half), r[1] / s * math.sin(k * half), r[2] / s * math.sin(k * half), math.cos(k * half)];
+    final rf = _rotate(qk, from.t);
+    return Pose(qk, [for (var i = 0; i < 3; i++) from.t[i] + k * (to.t[i] - from.t[i]) - rf[i]]);
   }
 
   double distanceTo(Pose o) =>

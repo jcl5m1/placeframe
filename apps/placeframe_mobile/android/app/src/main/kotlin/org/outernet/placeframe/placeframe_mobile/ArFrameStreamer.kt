@@ -1,6 +1,10 @@
 package org.outernet.placeframe.placeframe_mobile
 
 import android.app.Activity
+import android.content.Context
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
+import android.util.Log
 import android.graphics.ImageFormat
 import android.graphics.Rect
 import android.graphics.YuvImage
@@ -16,6 +20,8 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
 import com.google.ar.core.ArCoreApk
+import com.google.ar.core.Camera
+import com.google.ar.core.CameraConfig
 import com.google.ar.core.CameraConfigFilter
 import com.google.ar.core.Config
 import com.google.ar.core.Session
@@ -23,10 +29,14 @@ import com.google.ar.core.TrackingState
 import com.google.ar.core.exceptions.NotYetAvailableException
 import io.flutter.plugin.common.EventChannel
 import java.io.ByteArrayOutputStream
+import kotlin.math.atan
+import kotlin.math.roundToInt
 
 // ARCore without a view: the session runs on its own thread with an offscreen EGL context (ARCore needs a camera
 // texture to update), and every [intervalSec] the CPU camera image is JPEG-encoded and sent to Dart with the image
 // intrinsics, the camera pose (column-major 4x4, ARCore/OpenGL camera axes) and the tracking state.
+private const val POSE_INTERVAL_NS = 100_000_000L // 10 Hz
+
 class ArFrameStreamer(private val activity: Activity) : EventChannel.StreamHandler {
     private var sink: EventChannel.EventSink? = null
     private val main = Handler(Looper.getMainLooper())
@@ -90,10 +100,19 @@ class ArFrameStreamer(private val activity: Activity) : EventChannel.StreamHandl
             s.resume()
             session = s
             var lastSent = 0L
+            var lastPose = 0L
             while (running) {
                 val frame = s.update()
                 val now = frame.timestamp
-                if (now - lastSent < (intervalSec * 1e9).toLong()) continue
+                if (now - lastSent < (intervalSec * 1e9).toLong()) {
+                    // Between images, a pose-only event every POSE_INTERVAL_NS: enough to draw the odometry path.
+                    if (now - lastPose >= POSE_INTERVAL_NS) {
+                        lastPose = now
+                        val pose = poseMessage(frame.camera, now)
+                        main.post { sink?.success(pose) }
+                    }
+                    continue
+                }
                 val camera = frame.camera
                 val image: Image = try {
                     frame.acquireCameraImage()
@@ -103,22 +122,15 @@ class ArFrameStreamer(private val activity: Activity) : EventChannel.StreamHandl
                 lastSent = now
                 val jpeg = image.use { toJpeg(it) }
                 val k = camera.imageIntrinsics
-                val pose = FloatArray(16).also { camera.pose.toMatrix(it, 0) }
-                val tracking = when (camera.trackingState) {
-                    TrackingState.TRACKING -> "normal"
-                    TrackingState.PAUSED -> "limited"
-                    else -> "not_available"
-                }
                 val dims = k.imageDimensions
-                val msg = hashMapOf<String, Any>(
-                    "jpeg" to jpeg,
-                    "width" to dims[0], "height" to dims[1],
-                    "fx" to k.focalLength[0].toDouble(), "fy" to k.focalLength[1].toDouble(),
-                    "cx" to k.principalPoint[0].toDouble(), "cy" to k.principalPoint[1].toDouble(),
-                    "pose" to pose.map { it.toDouble() },
-                    "timestamp" to now / 1e9,
-                    "tracking" to tracking,
-                )
+                val msg = poseMessage(camera, now).apply {
+                    putAll(mapOf(
+                        "jpeg" to jpeg,
+                        "width" to dims[0], "height" to dims[1],
+                        "fx" to k.focalLength[0].toDouble(), "fy" to k.focalLength[1].toDouble(),
+                        "cx" to k.principalPoint[0].toDouble(), "cy" to k.principalPoint[1].toDouble(),
+                    ))
+                }
                 main.post { sink?.success(msg) }
             }
         } catch (e: Exception) {
@@ -131,11 +143,44 @@ class ArFrameStreamer(private val activity: Activity) : EventChannel.StreamHandl
         }
     }
 
+    private fun poseMessage(camera: Camera, now: Long): HashMap<String, Any> {
+        val pose = FloatArray(16).also { camera.pose.toMatrix(it, 0) }
+        val tracking = when (camera.trackingState) {
+            TrackingState.TRACKING -> "normal"
+            TrackingState.PAUSED -> "limited"
+            else -> "not_available"
+        }
+        return hashMapOf("pose" to pose.map { it.toDouble() }, "timestamp" to now / 1e9, "tracking" to tracking)
+    }
+
     // The largest CPU image up to 1920 px wide: enough detail for localization without large uploads.
+    // The widest field of view ARCore offers (any back camera it supports, and the CPU image aspect that crops the
+    // sensor least), then the largest image up to 1920 px wide: a wide view sees more of the map per frame.
     private fun chooseCameraConfig(s: Session) {
         val configs = s.getSupportedCameraConfigs(CameraConfigFilter(s))
-        val best = configs.filter { it.imageSize.width <= 1920 }.maxByOrNull { it.imageSize.width * it.imageSize.height }
-        if (best != null) s.cameraConfig = best
+        val manager = activity.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        fun fov(c: CameraConfig): Pair<Double, Double> {
+            val ch = manager.getCameraCharacteristics(c.cameraId)
+            val f = ch.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)?.minOrNull() ?: return 0.0 to 0.0
+            val sensor = ch.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE) ?: return 0.0 to 0.0
+            val aspect = c.imageSize.width.toDouble() / c.imageSize.height
+            val sensorAspect = (sensor.width / sensor.height).toDouble()
+            val (w, h) = if (aspect >= sensorAspect) sensor.width.toDouble() to sensor.width / aspect
+            else sensor.height * aspect to sensor.height.toDouble()
+            return Math.toDegrees(2 * atan(w / (2 * f))) to Math.toDegrees(2 * atan(h / (2 * f)))
+        }
+        for (c in configs) {
+            val (h, v) = fov(c)
+            Log.i("PF", "camera config id=${c.cameraId} cpu=${c.imageSize} gpu=${c.textureSize} fps=${c.fpsRange} " +
+                "fov=%.1fx%.1f".format(h, v))
+        }
+        val best = configs.filter { it.imageSize.width <= 1920 }
+            .maxWithOrNull(compareBy<CameraConfig>({ fov(it).let { (h, v) -> (h * v).roundToInt() } },
+                { it.imageSize.width * it.imageSize.height }))
+        if (best != null) {
+            s.cameraConfig = best
+            Log.i("PF", "camera chosen id=${best.cameraId} cpu=${best.imageSize} fov=%.1fx%.1f".format(fov(best).first, fov(best).second))
+        }
     }
 
     // YUV_420_888 to JPEG via NV21 (handles any row and pixel stride).
