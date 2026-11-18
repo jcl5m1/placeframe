@@ -1,0 +1,38 @@
+{
+  "host": {
+    "cpu": "11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz",
+    "cpus_available": 16,
+    "gpu": "NVIDIA GeForce RTX 3090"
+  },
+  "frames_per_session": 50,
+  "track_workers_per_process": 2,
+  "runs": [
+    {
+      "threads": "default",
+      "throughput": [
+        {
+          "processes": 2,
+          "sessions": 4,
+          "queries": 200,
+          "qps": 10.64,
+          "p50_ms": 348.9,
+          "p95_ms": 610.2,
+          "gpu_util_mean": 71.9,
+          "gpu_mem_max_MiB": 6710.0,
+          "cpu_busy_mean_pct": 83.8
+        },
+        {
+          "processes": 3,
+          "sessions": 6,
+          "queries": 300,
+          "qps": 11.67,
+          "p50_ms": 456.4,
+          "p95_ms": 823.3,
+          "gpu_util_mean": 85.4,
+          "gpu_mem_max_MiB": 9359.0,
+          "cpu_busy_mean_pct": 90.0
+        }
+      ]
+    }
+  ]
+}

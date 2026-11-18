@@ -171,6 +171,23 @@ the CPU cannot give the GPU work fast enough. The API adds little: the home resu
 the in-process results on a similar CPU. A cap of 4 CPU threads per process made no difference, so the cause is
 the CPU work per request, not threads that compete.
 
+**Less CPU work per request (measured, not yet deployed).** Two changes in the localizer (placeframe `c1d06a15`):
+decoded features of recently matched map images stay on the GPU (a cache of 1,000 images, ~0.7 GB per process),
+and PyTorch's cached GPU memory is released only above 4 GB instead of after every request. Home RTX 3090,
+in-process, same walk:
+
+| | Before | After |
+|---|---|---|
+| One request, median | 206 ms | 153 ms |
+| 2 processes x 4 sessions | 9.8 q/s, median 388 ms | 10.6 q/s, median 349 ms |
+| 3 processes x 6 sessions | — | **11.7 q/s, median 456 ms** (+19% at a median under 0.5 s) |
+| Peak (4 processes x 16 sessions) | 10.1 q/s (2 processes) | 12.7 q/s, median 1.2 s |
+| Recorded walk: within 0.5 m / wrong > 1 m | 277 / 6 of 285 | 277 / 6 of 285 |
+
+Fewer RANSAC trials near the predicted pose changed nothing (pose estimation stayed at 39 ms). Deployed with 3
+localizer processes per GPU, the planning rate rises from 8 to ~9.5 q/s per GPU through the API (~16% fewer
+GPUs); the tables in this study still use 8 q/s. Data: `cost/serving_profile/cpu_work/`.
+
 So: **rent GPUs with a fast CPU (≥4 GHz per core)**; a slow-CPU host gives less than half the throughput from the
 same GPU. The next gains are in the CPU work (keep cached GPU memory between requests, decode only the descriptors
 that matching needs, more localizer processes per GPU), not in the GPU or the API.
@@ -267,10 +284,9 @@ odometry until its next query). 3,000 attendees, mean of 20 simulated days:
    break from the known programme, re-scale every minute, keep 5% headroom, and skip tracking queries the GPUs
    cannot take (the phone keeps tracking on its odometry): 19% less GPU spend than a safe schedule-aware policy,
    with under 1% of queries skipped. Reactive scaling without the schedule cannot follow the breaks.
-8. **Cut the CPU work per request (~115 of 208 ms).** Keep PyTorch's cached GPU memory between requests (12 ms),
-   cache decoded descriptors of recently matched map images (17–30 ms), and run pose RANSAC with fewer iterations
-   when the tracker gives a prior; then run 3–4 localizer processes per GPU on a 16-core host. We expect 20–30%
-   more queries per GPU. Not yet measured.
+8. **Cut the CPU work per request** (measured): keep cached GPU memory and cache decoded map features on the
+   GPU, then run 3 localizer processes per GPU: +19% queries per GPU at a median under 0.5 s (~16% fewer GPUs),
+   with unchanged accuracy. Fewer RANSAC trials did not help.
 9. **Query less often when tracking is good.** Every halving of the rate halves the serving cost: for example every
    8–10 s instead of 5 s while fixes agree and the odometry reports good tracking.
 
