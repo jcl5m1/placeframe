@@ -6,8 +6,9 @@ variants are skipped (results_v2/<variant>.json).
 
 Variants (all from the VIO-posed capture, 378 frames x 6 views, 2 fps):
   f25/f50/f100  first 25/50/100% of the walk
-  j2/j4         full walk tiled as one map: copies side by side (1x2, 2x2 grid, 2 m apart) in one reconstruction,
-                so retrieval, pairing and one bundle adjustment run over the whole joined area
+  j2/j4/j8      full walk tiled as one map: copies side by side (1x2, 2x2, 4x2 grid, 2 m apart) in one
+                reconstruction, so retrieval, pairing and one bundle adjustment run over the whole joined area
+                (j8, ~18,000 images, is about the projected venue size; run on its own: study2.py j8)
 """
 from __future__ import annotations
 
@@ -30,7 +31,8 @@ ROOT = Path.home() / "pf_cost"
 VAR, RES = ROOT / "variants", ROOT / "results_v2"
 ORDER = ["f25", "f50", "f100", "j2", "j4"]
 # Tile offsets (m, floor plane x/z) for joined copies: the walk spans 25.4 x 15.5 m; 2 m gaps.
-TILES = {"j2": [(0, 0), (27.4, 0)], "j4": [(0, 0), (27.4, 0), (0, 17.5), (27.4, 17.5)]}
+TILES = {"j2": [(0, 0), (27.4, 0)], "j4": [(0, 0), (27.4, 0), (0, 17.5), (27.4, 17.5)],
+         "j8": [(x, z) for z in (0, 17.5) for x in (0, 27.4, 54.8, 82.2)]}
 TERMINAL = {"succeeded", "failed", "cancelled"}
 
 
@@ -179,7 +181,7 @@ def main():
     VAR.mkdir(parents=True, exist_ok=True)
     RES.mkdir(parents=True, exist_ok=True)
     api = PlaceframeApi()
-    for name in ORDER:
+    for name in sys.argv[1:] or ORDER:
         try:
             run_variant(api, name)
         except Exception as e:

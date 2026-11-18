@@ -1,0 +1,152 @@
+{
+  "name": "j8-resume",
+  "reconstruction_id": "7e893dd2-d6eb-449b-bd8c-aa95bebd9c83",
+  "r2_prefix": "jobs/7e893dd2-d6eb-449b-bd8c-aa95bebd9c83",
+  "options": {
+    "rig_verification": true,
+    "rotation_threshold": 180.0,
+    "neighbors_count": 16,
+    "bundle_adjustment_refine_sensor_from_rig": false,
+    "use_prior_position": true,
+    "pose_prior_position_sigma_m": 2.0
+  },
+  "upload_s": 1.4,
+  "total_s": 3125.7,
+  "stages": [
+    {
+      "state": "starting",
+      "phase": "downloading",
+      "dispatch": "7e893dd2-1",
+      "t": 76.0
+    },
+    {
+      "state": "running",
+      "phase": "downloading",
+      "dispatch": "7e893dd2-1",
+      "t": 91.3
+    },
+    {
+      "state": "running",
+      "phase": "extracting_features",
+      "dispatch": "7e893dd2-1",
+      "t": 152.4
+    },
+    {
+      "state": "running",
+      "phase": "training_product_quantizer",
+      "dispatch": "7e893dd2-1",
+      "t": 381.2
+    },
+    {
+      "state": "running",
+      "phase": "matching_features",
+      "dispatch": "7e893dd2-1",
+      "t": 442.3
+    },
+    {
+      "state": "running",
+      "phase": "verifying_geometry",
+      "dispatch": "7e893dd2-1",
+      "t": 564.1
+    },
+    {
+      "state": "running",
+      "phase": "downloading",
+      "dispatch": "7e893dd2-2",
+      "t": 1281.1
+    },
+    {
+      "state": "running",
+      "phase": "extracting_features",
+      "dispatch": "7e893dd2-2",
+      "t": 1342.2
+    },
+    {
+      "state": "running",
+      "phase": "training_product_quantizer",
+      "dispatch": "7e893dd2-2",
+      "t": 1540.6
+    },
+    {
+      "state": "running",
+      "phase": "matching_features",
+      "dispatch": "7e893dd2-2",
+      "t": 1586.4
+    },
+    {
+      "state": "running",
+      "phase": "verifying_geometry",
+      "dispatch": "7e893dd2-2",
+      "t": 1678.0
+    },
+    {
+      "state": "running",
+      "phase": "reconstructing",
+      "dispatch": "7e893dd2-2",
+      "t": 1815.0
+    },
+    {
+      "state": "running",
+      "phase": "uploading",
+      "dispatch": "7e893dd2-2",
+      "t": 3110.4
+    },
+    {
+      "state": "succeeded",
+      "phase": "uploading",
+      "dispatch": "7e893dd2-2",
+      "t": 3125.7
+    }
+  ],
+  "final_status": {
+    "dispatch": "7e893dd2-2",
+    "state": "succeeded",
+    "phase": "uploading",
+    "t": 1794961673.5245855,
+    "memory": {
+      "process_peak_rss_gib": 23.35,
+      "process_rss_gib": 13.19,
+      "host_used_peak_gib": 141.09,
+      "host_total_gib": 503.5,
+      "gpu_used_peak_gib": 0.52
+    },
+    "current": null,
+    "total": null,
+    "attempt": null,
+    "metrics": {
+      "total_images": 16830,
+      "registered_images": 16830,
+      "registration_rate": 100.0,
+      "num_3d_points": 268239,
+      "average_keypoints_per_image": 710.5917107583774,
+      "reprojection_pixel_error_50th_percentile": 0.692077271,
+      "reprojection_pixel_error_90th_percentile": 1.546015892,
+      "track_length_50th_percentile": 3.0,
+      "percent_tracks_with_length_greater_than_or_equal_to_3": 51.94695775036441,
+      "all_verified_matches": 263139,
+      "all_verified_match_rate": 62.78848356431108,
+      "all_verified_match_inliers_mean": 96.29618186585797,
+      "all_verified_match_inliers_median": 61.0,
+      "stereo_verified_matches": 16095,
+      "stereo_verified_match_rate": 88.70701058201058,
+      "stereo_verified_match_inliers_mean": 170.3685616651134,
+      "stereo_verified_match_inliers_median": 140.0,
+      "same_sensor_verified_matches": 49906,
+      "same_sensor_verified_match_rate": 65.34936098889587,
+      "same_sensor_verified_match_inliers_mean": 118.06085440628381,
+      "same_sensor_verified_match_inliers_median": 76.0,
+      "cross_sensor_verified_matches": 197138,
+      "cross_sensor_verified_match_rate": 60.737084688948045,
+      "cross_sensor_verified_match_inliers_mean": 84.73888342176546,
+      "cross_sensor_verified_match_inliers_median": 54.0,
+      "map_image_count": 16830,
+      "map_point_count": 268239,
+      "map_avg_track_length": 2.712797169688226,
+      "map_bounding_volume_m3": 9468.576358218785,
+      "map_viewpoint_diversity": 0.9823060713780093,
+      "truth_alignment_rms_residual_m": 0.06209675105335922,
+      "truth_alignment_max_residual_m": 0.38825514463962973
+    },
+    "results_bytes": 1172633600
+  }
+}

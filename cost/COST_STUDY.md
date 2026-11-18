@@ -73,8 +73,26 @@ only each batch's images to the GPU, and the compression is trained on a 1M-desc
 | Registered images | 8,508 / 8,532 (two builds) | 8,556 |
 | Reprojection error, median | 0.69 px | 0.68 px |
 
-Matches are identical in half and full precision (307,078 on a test batch). Scaled linearly, the venue would peak
-at ≤26 GiB (part of the peak is fixed, so likely less); not yet measured at that size.
+Matches are identical in half and full precision (307,078 on a test batch).
+
+**Measured at venue size.** The full walk tiled 4×2 into one map (`j8`: 18,144 images, close to the venue's ~19,700)
+built in half precision on rented RTX 3090s (the home GPU had stopped working). Peak memory by stage:
+
+| Stage | Peak process RAM | Peak GPU memory |
+|---|---|---|
+| Feature extraction | 4.6 GiB | 2.3 GB |
+| Compression training (OPQ/PQ) | 13.7 GiB | 2.3 GB |
+| Matching | 13.7 GiB | 5.1 GB |
+| Mapping (prior-pose mapper, bundle adjustment) | **23.4 GiB** | 0.5 GB |
+
+The map: 16,830 images registered, 268,239 points, median reprojection error 0.69 px (as in the smaller maps).
+**Mapping, not the descriptors, now sets the peak:** 23.4 GiB at 18,144 images, so a ~19,700-image venue needs
+about 25 GiB. It fits one 32 GB machine, with little room for other services on it; a 64 GB host is the safe choice.
+
+Stage times on the rented hosts (two Quebec hosts; both slower than the home machine): feature extraction
+59 min, matching 31 min, verification 2 min, mapping 22 min. Two of four rented instances stopped without a reason
+from Vast (preemption, or the 40 GB disk); the job resumed from its feature and match checkpoints each time. The
+build cost ~$1.00 in total. Data: `cost/venue_build/`.
 
 ## 2. Rented, right-sized GPU
 
@@ -166,8 +184,8 @@ app downloads a ~1 MB point cloud per session; query images go straight to the G
    Rent GPUs with a fast CPU, and cut the CPU work per request next.
 4. **Reuse base features and matches in merges** (done: -18% on a merge with half its images already mapped).
 5. **Rent for parallel builds, not single venue builds.**
-6. **Keep descriptors in half precision** (done: build RAM 18 → 11.9 GiB with the same map quality), so a venue
-   fits one 32 GB machine.
+6. **Keep descriptors in half precision** (done: build RAM 18 → 11.9 GiB with the same map quality). Measured at
+   venue size (18,144 images), the build peaks at 23.4 GiB in mapping: it fits a 32 GB machine; rent 64 GB hosts.
 
 ## Assumptions and caveats
 

@@ -37,6 +37,8 @@ def main() -> None:
     ap.add_argument("--conversion", type=Path)
     ap.add_argument("--name", default="")
     ap.add_argument("--staged", help="reconstruction id whose capture is already in R2 (jobs/<id>/capture.tar)")
+    ap.add_argument("--resume", action="store_true",
+                    help="with --staged: keep its stage checkpoints, so the worker resumes after the last one")
     a = ap.parse_args()
     conv_path = a.conversion or a.capture.with_name("conversion.json")
     options, _ = choose_reconstruction_options(a.capture, json.loads(conv_path.read_text()))
@@ -49,7 +51,8 @@ def main() -> None:
         if size != a.capture.stat().st_size:
             raise SystemExit(f"staged capture is {size} bytes, {a.capture} is {a.capture.stat().st_size}")
         for old in s3.list_objects_v2(Bucket=bucket, Prefix=f"{prefix}/").get("Contents", []):
-            if old["Key"] != f"{prefix}/capture.tar":  # a fresh run: no old status or checkpoints
+            keep = old["Key"] == f"{prefix}/capture.tar" or (a.resume and "/checkpoints/" in old["Key"])
+            if not keep:  # a fresh run: no old status (and no checkpoints unless resuming)
                 s3.delete_object(Bucket=bucket, Key=old["Key"])
     else:
         s3.upload_file(str(a.capture), bucket, f"{prefix}/capture.tar")
