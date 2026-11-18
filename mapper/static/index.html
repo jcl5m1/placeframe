@@ -183,13 +183,14 @@ async function loadMaps() {
   const pick = built || allMaps.find(m => m.id === saved) || allMaps.find(m => m.active) || allMaps[0];
   $('folderList').innerHTML = [...new Set(allMaps.map(m => m.folder).filter(Boolean))].sort().map(f => `<option value="${esc(f)}">`).join('');
   picker ??= PfUI.mapPicker($('mapPicker'), { onSelect: id => { $('map').value = id; $('map').dispatchEvent(new Event('change')); } });
-  picker.setItems(allMaps.map(m => ({ id: m.id, name: m.name, folder: m.folder, active: m.active, meta: mapMeta(m) })));
+  picker.setItems(allMaps.map(m => ({ id: m.id, name: m.name, folder: m.folder, active: m.active, created: m.created_at || '', meta: mapMeta(m) })));
   selectMap(pick ? pick.id : '');
 }
 function mapMeta(m) {
   if (m.pending) return `building… · ${m.recordings} recording${m.recordings === 1 ? '' : 's'}`;
   const what = m.recordings ? `${esc(m.base_name)} + ${m.recordings} recording${m.recordings > 1 ? 's' : ''}` : 'original capture';
-  return `${what}${m.active ? '' : ' · inactive'}`;
+  const when = m.created_at ? ' · ' + new Date(m.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '';
+  return `${what}${when}${m.active ? '' : ' · inactive'}`;
 }
 function selectMap(id) {
   picker.select(id, false);

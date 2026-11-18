@@ -2,7 +2,7 @@
 """Export recorded phone localization sessions for the map viewer (~/pf_x5/viewer).
 
 Writes, under the viewer folder:
-  maps.json                      the maps the viewer can show: [{id, name, file}]
+  maps.json                      the maps the viewer can show: [{id, name, file, created}]
   maps/<map id>/map.json         a viewer map for every map a session localized against (built on demand)
   sessions/index.json            one entry per client session
   sessions/<sid>.json            per request: time, result, camera position + heading in the viewer frame,
@@ -37,11 +37,8 @@ import replay_localizations as rl  # noqa: E402
 from add_recording_to_map import PlaceframeApi  # noqa: E402
 
 VIEWER = Path.home() / "pf_x5/viewer"
-DEFAULT_MAP = {"id": "20afa6e7-0150-45ae-b041-f23971b46d30", "file": "map.json"}  # first build (no hallway)
-# Listed first in the viewer's map picker, best first: the full X5 walk (panoramic pairing, VIO priors), then the
-# merged two-recording map, then the OpenVIO-prior build.
-FEATURED = ["4c17aa5e-aaf8-453a-bfd7-99d2bc176fda", "f3913957-1a89-4a29-928d-b05ff3cdc4ef", "19917a7a-cb22-46d9-963c-20732257d6f5",
-            "8bc254e3-854b-42df-85cc-dd064689ed78"]
+# The first viewer map (viewer/map.json, with the odometry overlays) names the map it is of in its "id" field.
+REFERENCE_FILE = "map.json"
 SETTLE_S = 180  # a session is finished once its last request is this old
 THUMB_W = 360
 # Image orientation reported by the client -> PIL transpose that makes the thumbnail upright.
@@ -82,8 +79,15 @@ def main() -> None:
     print(f"{len(index)} sessions, {len(maps)} maps exported to {a.viewer}")
 
 
+def _reference(viewer: Path) -> dict:
+    try:
+        return json.loads((viewer / REFERENCE_FILE).read_text())
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
 def map_folders() -> dict[str, str]:
-    """The mapper's map folders (map id -> "house/earlier builds"): which maps belong to the same place."""
+    """The mapper's map folders (map id -> "place/earlier builds"): which maps belong to the same place."""
     try:
         return json.loads((Path.home() / "pf_mapper" / "map_folders.json").read_text())
     except (FileNotFoundError, ValueError):
@@ -107,25 +111,30 @@ def ensure_maps(api: PlaceframeApi, viewer: Path, needed: set[str]) -> list[dict
     """Every built map gets a viewer map (built once, then reused); the viewer groups them with the mapper's
     folders. A map whose model cannot be read is skipped and retried on the next run."""
     known = {m["id"]: m for m in api.get("/localization-maps")}
-    rest = sorted((m for m in known.values() if m["id"] not in FEATURED and m["id"] != DEFAULT_MAP["id"]),
-                  key=lambda m: m.get("created_at") or "", reverse=True)
-    wanted = [m for m in FEATURED if m in known] + [m["id"] for m in rest]
+    reference = _reference(viewer)
+    ref_id = reference.get("id")
+    wanted = [m["id"] for m in sorted((m for m in known.values() if m["id"] != ref_id),
+                                      key=lambda m: m.get("created_at") or "", reverse=True)]  # newest first
     folders = map_folders()
+    ref_place = top_folder(folders.get(ref_id, "")) if ref_id else ""
     entries = []
     for mid in wanted:
         dest = viewer / "maps" / mid / "map.json"
         if not dest.exists() or not (dest.parent / ".v2").exists():
-            # Odometry overlays come from the house recording's first build: only meaningful on house maps.
-            reference = viewer / DEFAULT_MAP["file"] if folders.get(mid, "").startswith("house") else None
+            # Odometry overlays come from the reference (first) build: only meaningful on maps of the same place,
+            # i.e. in the same top-level mapper folder.
+            same_place = bool(ref_place) and top_folder(folders.get(mid, "")) == ref_place
             try:
-                build_viewer_map(known[mid], dest, reference)
+                build_viewer_map(known[mid], dest, viewer / REFERENCE_FILE if same_place else None)
             except Exception as e:  # noqa: BLE001 - one unreadable model must not stop the others
                 print(f"viewer map for {known[mid].get('name') or mid}: skipped ({e!r})")
                 continue
             (dest.parent / ".v2").touch()
-        entries.append({"id": mid, "name": known[mid].get("name") or mid[:8], "file": f"maps/{mid}/map.json"})
-    entries.append({"id": DEFAULT_MAP["id"], "file": DEFAULT_MAP["file"],
-                    "name": known.get(DEFAULT_MAP["id"], {}).get("name", "original map") + " (first build — no hallway)"})
+        entries.append({"id": mid, "name": known[mid].get("name") or mid[:8], "file": f"maps/{mid}/map.json",
+                        "created": known[mid].get("created_at") or ""})
+    if ref_id:
+        entries.append({"id": ref_id, "file": REFERENCE_FILE, "created": known.get(ref_id, {}).get("created_at") or "",
+                        "name": (known.get(ref_id, {}).get("name") or reference.get("name") or ref_id[:8]) + " (first build)"})
     (viewer / "maps.json").write_text(json.dumps(entries, indent=1))
     return entries
 

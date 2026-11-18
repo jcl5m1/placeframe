@@ -6,7 +6,8 @@
 //
 //   PfUI.treePicker(element, {items, selected, onSelect, storageKey, placeholder})
 //       a dropdown whose items are grouped in collapsible folders (item.folder = "a/b/c"); which folders are open is
-//       remembered per storageKey. items: [{id, name, folder?, meta? (HTML), active?}]. Returns {select, setItems, value}.
+//       remembered per storageKey. items: [{id, name, folder?, meta? (HTML), active?, created? (ISO time)}]: items with
+//       a creation time are listed newest first, and folders by their newest item. Returns {select, setItems, value}.
 //   PfUI.mapPicker(element, opts)   the tree picker for maps
 //   PfUI.pageNav(element, currentId) the tree picker listing the project's pages; choosing one opens it
 (function () {
@@ -92,10 +93,13 @@
         n.items.push(it);
       }
       const count = n => n.items.length + Object.values(n.folders).reduce((a, f) => a + count(f), 0);
-      const draw = (n, path) => Object.keys(n.folders).sort().map(name => {
+      const newest = n => [...n.items.map(it => it.created || ''), ...Object.values(n.folders).map(newest)].reduce((a, b) => (b > a ? b : a), '');
+      // Newest first (items with a creation time; others keep alphabetical order).
+      const byNewest = (a, b) => (b.created || '').localeCompare(a.created || '') || a.name.localeCompare(b.name);
+      const draw = (n, path) => Object.keys(n.folders).sort((a, b) => newest(n.folders[b]).localeCompare(newest(n.folders[a])) || a.localeCompare(b)).map(name => {
         const p = path ? path + '/' + name : name, f = n.folders[name];
         return `<details data-path="${esc(p)}"${shown.has(p) ? ' open' : ''}><summary>📁 ${esc(name)} <span class="pfui-meta">${count(f)}</span></summary>${draw(f, p)}</details>`;
-      }).join('') + n.items.slice().sort((a, b) => ((b.active ? 1 : 0) - (a.active ? 1 : 0)) || a.name.localeCompare(b.name)).map(it =>
+      }).join('') + n.items.slice().sort(byNewest).map(it =>
         `<div class="pfui-item${it.id === selected ? ' sel' : ''}" data-id="${esc(it.id)}">${esc(it.name)}${it.meta ? `<span class="pfui-meta">${it.meta}</span>` : ''}</div>`).join('');
       tree.innerHTML = draw(rootNode, '') || '<span class="pfui-meta">Nothing here</span>';
       tree.querySelectorAll('.pfui-item').forEach(el => el.onclick = () => select(el.dataset.id));

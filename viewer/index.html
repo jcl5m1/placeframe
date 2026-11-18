@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Placeframe map viewer — x5-house-2026-11-07</title>
+<title>Placeframe map viewer</title>
 <style>
   :root { --bg:#0f1115; --panel:#181b22; --ink:#e7e9ee; --muted:#9aa1ad; --accent:#4cc2ff; --line:#2a2f3a; }
   * { box-sizing: border-box; }
@@ -396,7 +396,7 @@
     const folders = await fetch('folders.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : {}).catch(() => ({}));
     $('mapGroup').style.display = '';
     PfUI.mapPicker($('mapPicker'), {
-      items: maps.map(m => ({ id: m.file, name: m.name, folder: folders[m.id] || '' })),
+      items: maps.map(m => ({ id: m.file, name: m.name, folder: folders[m.id] || '', created: m.created || '' })),
       selected: mapFile,
       onSelect: file => { const u = new URL(location); u.searchParams.set('map', file); location.href = u; },
     });

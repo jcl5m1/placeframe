@@ -18,7 +18,7 @@ map's coordinate frame, and reconstructing that:
 
 Every stage leaves a marker in <job-dir>/.done, so a failed or interrupted job resumes where it stopped.
 
-  uv run merge_video.py NEW.insv --job-dir ~/pf_x5/jobs/new --base-map x5-house-2026-11-07
+  uv run merge_video.py NEW.insv --job-dir ~/pf_x5/jobs/new --base-map lakehouse-2026-11-07
 """
 
 from __future__ import annotations

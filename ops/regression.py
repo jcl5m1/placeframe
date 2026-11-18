@@ -2,8 +2,11 @@
 """Localization regression check: fixed query sets against fixed maps, compared with a saved baseline.
 
 Suites (the same queries and maps every run, so results are comparable):
-  phone_walk      recorded phone requests (C# client) replayed against the house map
+  phone_walk      recorded phone requests (C# client) replayed against a map of the place they were recorded in
   heads, stairs   7-Scenes test queries against their maps, scored against ground truth
+
+The map of each suite (and the 7-Scenes data folder) is set in ~/pf_watchdog/regression_suites.json:
+  {"phone_walk": {"map": "<map id>"}, "heads": {"map": "<map id>", "data": "heads_pf"}, ...}
 
   python ops/regression.py                 # run, compare with the baseline, write the latest results
   python ops/regression.py --set-baseline  # run and save as the new baseline (after an intended change)
@@ -29,11 +32,10 @@ from add_recording_to_map import PlaceframeApi  # noqa: E402
 
 OUT = Path.home() / "pf_watchdog" / "regression"
 DATASETS = Path.home() / "pf_data" / "datasets" / "7scenes"  # working copy on the SSD (originals on the HDD)
-HOUSE_MAP = "913aee92-baec-4cf5-9ce0-2f2a075a858c"  # re-registered house map (2026-11-17)
-SUITES = {
-    "heads": {"map": "22699ebb-a9e8-45d0-972b-373d4f739df0", "data": DATASETS / "heads_pf"},
-    "stairs": {"map": "8fb152c1-b5f4-4c39-b90f-246c91fa0302", "data": DATASETS / "stairs_pf"},
-}
+CONFIG = Path.home() / "pf_watchdog" / "regression_suites.json"  # which map each suite runs against (see above)
+_config = json.loads(CONFIG.read_text())
+PHONE_WALK_MAP = _config["phone_walk"]["map"]
+SUITES = {name: {"map": c["map"], "data": DATASETS / c["data"]} for name, c in _config.items() if "data" in c}
 # A suite regresses when a metric moves the wrong way by more than this.
 TOLERANCE = {"localized_frac": 0.05, "recall@25cm,2deg": 0.05, "recall@50cm,5deg": 0.05, "median_dt_m": 0.03,
              "latency_ms_p50": 1.5}  # latency: ratio
@@ -77,7 +79,7 @@ def phone_walk(api: PlaceframeApi) -> dict:
         api._auth()
         t0 = time.monotonic()
         resp = api.client.post(api.server + "/localize", headers={"X-Placeframe-Replay": "1"},
-                               data={"map_ids": json.dumps([HOUSE_MAP]), "camera_config": json.dumps(q["camera_config"]),
+                               data={"map_ids": json.dumps([PHONE_WALK_MAP]), "camera_config": json.dumps(q["camera_config"]),
                                      "axis_convention": q["axis_convention"]},
                                files={"image": ("q.jpg", r["_path"].read_bytes(), "image/jpeg")})
         ms.append((time.monotonic() - t0) * 1000)
