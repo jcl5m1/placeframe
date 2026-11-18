@@ -23,6 +23,7 @@ import queue
 import re
 import struct
 import asyncio
+from collections import defaultdict
 import subprocess
 import sys
 import tempfile
@@ -62,6 +63,7 @@ import gps_placement  # noqa: E402
 from .project_pages import router as project_router  # noqa: E402
 from . import rentals  # noqa: E402
 from .telemetry import Telemetry  # noqa: E402
+from . import slices  # noqa: E402
 
 CREDS = saved_credentials(REPO.parent / "placeframe")
 SERVER = CREDS["PLACEFRAME_URL"].rstrip("/")
@@ -266,6 +268,42 @@ async def map_points(map_id: str, request: Request, limit: int = 80_000, who: st
 
 
 _points_cache: dict[tuple, bytes] = {}
+
+
+# Top-down slices of a map for the phone app (see mapper/slices.py): GET .../slices describes them, GET
+# .../slices/<k>.png is one grayscale histogram image. Built from the map's points on first request, then cached.
+@app.get("/api/maps/{map_id}/slices")
+async def map_slices(map_id: str, request: Request, who: str = Depends(user)):
+    return await _slices_meta(map_id, request.headers["authorization"])
+
+
+@app.get("/api/maps/{map_id}/slices/{k}.png")
+async def map_slice(map_id: str, k: int, request: Request, who: str = Depends(user)):
+    meta = await _slices_meta(map_id, request.headers["authorization"])
+    if not 0 <= k < meta["levels"]:
+        raise HTTPException(404, "no such slice")
+    return FileResponse(slices.CACHE / meta["reconstruction_id"] / f"{k}.png", media_type="image/png",
+                        headers={"Cache-Control": "private, max-age=86400"})
+
+
+_slice_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+
+
+async def _slices_meta(map_id: str, authorization: str) -> dict:
+    async with httpx.AsyncClient(timeout=120) as c:  # the caller must be able to see the map (and its points)
+        h = {"Authorization": authorization}
+        r = await c.get(f"{SERVER}/localization-maps/{map_id}", headers=h)
+        if r.status_code != 200:
+            raise HTTPException(r.status_code, "map not found")
+        rid = r.json()["reconstruction_id"]
+        async with _slice_locks[rid]:
+            meta = slices.cached(rid)
+            if meta is None:
+                pr = await c.get(f"{SERVER}/reconstructions/{rid}/points", params={"axis_convention": "OPENCV"}, headers=h)
+                if pr.status_code != 200:
+                    raise HTTPException(pr.status_code, "map points not available")
+                meta = await asyncio.to_thread(slices.build, rid, pr.content)
+    return meta | {"map_id": map_id}
 
 
 @app.get("/api/maps/{map_id}/contents")
