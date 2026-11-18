@@ -227,6 +227,30 @@ tracking queries, 0.5–4% serves the place search when an app starts, and **37�
 that are provisioned but not busy** (30% headroom, and each 5-minute window sized for its peak). One event day of
 serving costs about 90 times the venue map's build at the adaptive rate, and 830 times at 2 Hz.
 
+**Can the headroom and idle share be cut?** We simulated autoscaling (`cost/autoscale.py`) with what the model
+above leaves out: a new GPU serves 3 min after it is requested (measured on Vast: ~2.3 min to a ready worker, plus
+map loading) and is billed from the request; each GPU runs at least 10 min; and attendance in each break varies
+at random (standard deviation 15%), unknown to the scaler. Two ways to handle more queries than capacity: queue
+them (a query is "late" if it waits over 0.5 s), or skip them (load shedding: the phone keeps tracking on its own
+odometry until its next query). 3,000 attendees, mean of 20 simulated days:
+
+| Policy | Adaptive rate: cost / late / skipped | 1 Hz: cost / late / skipped |
+|---|---|---|
+| This study's model: 5-min windows, peak x1.3, no start-up delay, load known | $32.60 / 0% / 0% | $144 / 0% / 0% |
+| Reactive (no schedule), 1-min steps, x1.3 | $28.85 / 63% / — | $124 / 75% / — |
+| Schedule-aware, 1-min steps, x1.3 | $34.77 / 0.02% / 0.01% | $153 / 0.01% / 0% |
+| Schedule-aware, 1-min steps, x1.15 | $30.94 / 1.4% / 0.12% | $136 / 4.9% / 0.25% |
+| **Schedule-aware, 1-min steps, x1.05, with load shedding** | **$28.24** / — / **0.40%** (worst day 0.9%) | **$124** / — / **0.95%** (worst 2.3%) |
+
+- Without the schedule, scaling cannot follow a break: queries rise over ~3 min, a GPU needs 3 min to start, and
+  most of the day's queries happen in breaks. The model above, which starts GPUs at once, hides this.
+- Most of the headroom is necessary: it absorbs attendance that nobody can predict. Cutting it only works if
+  extra queries are skipped instead of queued. Schedule-aware scaling with load shedding at x1.05 costs 19% less
+  than the schedule-aware x1.3 policy, and skips under 1% of queries.
+- **Assumptions:** conference behaviour (active shares in sessions and breaks, ramps, app restarts) is assumed,
+  not measured; the programme schedule (break times) is known in advance; attendance per break varies by 15%.
+  With real event data these numbers must be re-fitted.
+
 ## 5. Recommendations
 
 1. **Query adaptively** (done in our client): the largest single factor in serving cost.
@@ -239,9 +263,10 @@ serving costs about 90 times the venue map's build at the adaptive rate, and 830
 5. **Rent for parallel builds, not single venue builds.**
 6. **Keep descriptors in half precision** (done: build RAM 18 → 11.9 GiB with the same map quality). Measured at
    venue size (18,144 images), the build peaks at 23.4 GiB in mapping: it fits a 32 GB machine; rent 64 GB hosts.
-7. **Cut the idle share (37–41% of serving).** Scale in 1-minute windows instead of 5, start GPUs before each
-   break (the programme is known), and use less headroom with a short request queue; together we expect 15–25% less
-   GPU spend. Not yet measured.
+7. **Scale to the schedule, and shed load instead of queueing it** (simulated). Start GPUs ~3 min before each
+   break from the known programme, re-scale every minute, keep 5% headroom, and skip tracking queries the GPUs
+   cannot take (the phone keeps tracking on its odometry): 19% less GPU spend than a safe schedule-aware policy,
+   with under 1% of queries skipped. Reactive scaling without the schedule cannot follow the breaks.
 8. **Cut the CPU work per request (~115 of 208 ms).** Keep PyTorch's cached GPU memory between requests (12 ms),
    cache decoded descriptors of recently matched map images (17–30 ms), and run pose RANSAC with fewer iterations
    when the tracker gives a prior; then run 3–4 localizer processes per GPU on a 16-core host. We expect 20–30%

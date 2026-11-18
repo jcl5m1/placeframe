@@ -1,0 +1,167 @@
+{
+ "assumptions": {
+  "start_s": 180,
+  "min_life_s": 600,
+  "attendance_sd": 0.15,
+  "gpu_qps": 8.0,
+  "price": 0.15,
+  "wait_limit_s": 0.5,
+  "seeds": 20
+ },
+ "results": [
+  {
+   "attendees": 3000,
+   "rate": "adaptive",
+   "policy": "study: 5-min windows, peak x1.3, no delay (clairvoyant)",
+   "cost": 32.6,
+   "gpu_hours": 217.3,
+   "late_share_pct": 0.0,
+   "late_share_worst_pct": 0.0,
+   "shed_share_pct": 0.0,
+   "shed_share_worst_pct": 0.0
+  },
+  {
+   "attendees": 3000,
+   "rate": "adaptive",
+   "policy": "reactive, 5-min steps, x1.3",
+   "cost": 32.25,
+   "gpu_hours": 215.0,
+   "late_share_pct": 79.29,
+   "late_share_worst_pct": 80.58,
+   "shed_share_pct": 39.1,
+   "shed_share_worst_pct": 40.38
+  },
+  {
+   "attendees": 3000,
+   "rate": "adaptive",
+   "policy": "reactive, 1-min steps, x1.3",
+   "cost": 28.85,
+   "gpu_hours": 192.3,
+   "late_share_pct": 63.01,
+   "late_share_worst_pct": 64.82,
+   "shed_share_pct": 19.19,
+   "shed_share_worst_pct": 19.88
+  },
+  {
+   "attendees": 3000,
+   "rate": "adaptive",
+   "policy": "schedule-aware, 1-min steps, x1.3",
+   "cost": 34.77,
+   "gpu_hours": 231.8,
+   "late_share_pct": 0.02,
+   "late_share_worst_pct": 0.18,
+   "shed_share_pct": 0.01,
+   "shed_share_worst_pct": 0.04
+  },
+  {
+   "attendees": 3000,
+   "rate": "adaptive",
+   "policy": "schedule-aware, 1-min steps, x1.2",
+   "cost": 32.14,
+   "gpu_hours": 214.2,
+   "late_share_pct": 0.55,
+   "late_share_worst_pct": 2.05,
+   "shed_share_pct": 0.07,
+   "shed_share_worst_pct": 0.19
+  },
+  {
+   "attendees": 3000,
+   "rate": "adaptive",
+   "policy": "schedule-aware, 1-min steps, x1.15",
+   "cost": 30.94,
+   "gpu_hours": 206.2,
+   "late_share_pct": 1.38,
+   "late_share_worst_pct": 5.13,
+   "shed_share_pct": 0.12,
+   "shed_share_worst_pct": 0.3
+  },
+  {
+   "attendees": 3000,
+   "rate": "adaptive",
+   "policy": "schedule-aware, 1-min steps, x1.05",
+   "cost": 28.24,
+   "gpu_hours": 188.2,
+   "late_share_pct": 6.05,
+   "late_share_worst_pct": 17.78,
+   "shed_share_pct": 0.4,
+   "shed_share_worst_pct": 0.88
+  },
+  {
+   "attendees": 3000,
+   "rate": "1 Hz",
+   "policy": "study: 5-min windows, peak x1.3, no delay (clairvoyant)",
+   "cost": 144.3,
+   "gpu_hours": 962.0,
+   "late_share_pct": 0.0,
+   "late_share_worst_pct": 0.0,
+   "shed_share_pct": 0.0,
+   "shed_share_worst_pct": 0.0
+  },
+  {
+   "attendees": 3000,
+   "rate": "1 Hz",
+   "policy": "reactive, 5-min steps, x1.3",
+   "cost": 139.65,
+   "gpu_hours": 931.0,
+   "late_share_pct": 79.86,
+   "late_share_worst_pct": 81.16,
+   "shed_share_pct": 39.19,
+   "shed_share_worst_pct": 40.29
+  },
+  {
+   "attendees": 3000,
+   "rate": "1 Hz",
+   "policy": "reactive, 1-min steps, x1.3",
+   "cost": 124.07,
+   "gpu_hours": 827.1,
+   "late_share_pct": 75.31,
+   "late_share_worst_pct": 77.02,
+   "shed_share_pct": 18.96,
+   "shed_share_worst_pct": 19.64
+  },
+  {
+   "attendees": 3000,
+   "rate": "1 Hz",
+   "policy": "schedule-aware, 1-min steps, x1.3",
+   "cost": 153.4,
+   "gpu_hours": 1022.7,
+   "late_share_pct": 0.01,
+   "late_share_worst_pct": 0.21,
+   "shed_share_pct": 0.0,
+   "shed_share_worst_pct": 0.03
+  },
+  {
+   "attendees": 3000,
+   "rate": "1 Hz",
+   "policy": "schedule-aware, 1-min steps, x1.2",
+   "cost": 141.55,
+   "gpu_hours": 943.7,
+   "late_share_pct": 2.12,
+   "late_share_worst_pct": 8.3,
+   "shed_share_pct": 0.1,
+   "shed_share_worst_pct": 0.39
+  },
+  {
+   "attendees": 3000,
+   "rate": "1 Hz",
+   "policy": "schedule-aware, 1-min steps, x1.15",
+   "cost": 135.75,
+   "gpu_hours": 905.0,
+   "late_share_pct": 4.85,
+   "late_share_worst_pct": 14.05,
+   "shed_share_pct": 0.25,
+   "shed_share_worst_pct": 0.81
+  },
+  {
+   "attendees": 3000,
+   "rate": "1 Hz",
+   "policy": "schedule-aware, 1-min steps, x1.05",
+   "cost": 123.97,
+   "gpu_hours": 826.5,
+   "late_share_pct": 18.9,
+   "late_share_worst_pct": 41.89,
+   "shed_share_pct": 0.95,
+   "shed_share_worst_pct": 2.27
+  }
+ ]
+}
