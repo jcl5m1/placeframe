@@ -61,8 +61,10 @@ def main() -> None:
     title = a.title or (reg.get(rid) or {}).get("title") or _first_heading(text) or src.stem
     out = REPORTS / rid
     out.mkdir(parents=True, exist_ok=True)
-    drive = dict((reg.get(rid) or {}).get("drive", {})) if a.drive else {}
-    published = VIDEO.sub(lambda m: _drive_player(m, src, rid, drive), text) if a.drive else text
+    # Once a report's videos are on Drive, they stay there: a later publish without --drive keeps using Drive.
+    use_drive = a.drive or bool((reg.get(rid) or {}).get("drive"))
+    drive = dict((reg.get(rid) or {}).get("drive", {})) if use_drive else {}
+    published = VIDEO.sub(lambda m: _drive_player(m, src, rid, drive), text) if use_drive else text
     for ref in (x or y for x, y in ASSET.findall(text)):
         if "://" in ref or ref.startswith("/") or ref in drive:
             continue
