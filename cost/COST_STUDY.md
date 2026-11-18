@@ -198,7 +198,36 @@ app downloads a ~1 MB point cloud per session; query images go straight to the G
 | GCS Standard | $0.06/month | $93 | $1.05 |
 | Azure Blob Hot | $0.06/month | $68 | $0.76 |
 
-## 4. Recommendations
+## 4. Cost stack-up: building once, serving every day
+
+All prices are rented RTX 3090 time at $0.15/h, with storage on Cloudflare R2 (code: `cost/stackup.py`; data:
+`cost/stackup.json`).
+
+![build cost by stage](4_build_cost_by_stage.png)
+
+| Map | Images | Preprocessing (CPU) | Feature extraction | Compression training | Matching | Verification | Mapping | Total |
+|---|---|---|---|---|---|---|---|---|
+| House, full walk (measured) | 2,268 | 6 min | 3 min | 0.2 min | 3 min | 0.6 min | 10 min | 23 min, $0.06 |
+| 4 houses joined (measured) | 9,072 | 23 min | 12 min | 0.7 min | 13 min | 2.6 min | 8 min | 59 min, $0.15 |
+| 10,000 m² venue (projected) | 19,700 | 50 min | 27 min | 1.5 min | 28 min | 5.6 min | 17 min | 129 min, $0.32 |
+
+Building a venue map costs about $0.32 and about 2 hours, once per venue. Preprocessing on the CPU is the
+largest stage. Storage of the map and its capture is about $0.05 per month.
+
+![serving cost by use](5_serving_cost_by_use.png)
+
+| Attendees | Adaptive (0.19 q/s) | 0.5 Hz | 1 Hz | 2 Hz |
+|---|---|---|---|---|
+| 1,000 | $10 | $24 | $46 | $89 |
+| 3,000 | $28 | $69 | $134 | $266 |
+| 10,000 | $92 | $227 | $447 | $886 |
+
+Serving cost per event day grows in proportion to attendees × query rate. Of the GPU spend, 55–62% serves
+tracking queries, 0.5–4% serves the place search when an app starts, and **37–41% is autoscaling headroom and GPUs
+that are provisioned but not busy** (30% headroom, and each 5-minute window sized for its peak). One event day of
+serving costs about 90 times the venue map's build at the adaptive rate, and 830 times at 2 Hz.
+
+## 5. Recommendations
 
 1. **Query adaptively** (done in our client): the largest single factor in serving cost.
 2. **Keep the map next to the GPUs, or on R2.** Marketplace GPUs plus R2, or cloud GPUs plus the same cloud's store;
@@ -210,6 +239,15 @@ app downloads a ~1 MB point cloud per session; query images go straight to the G
 5. **Rent for parallel builds, not single venue builds.**
 6. **Keep descriptors in half precision** (done: build RAM 18 → 11.9 GiB with the same map quality). Measured at
    venue size (18,144 images), the build peaks at 23.4 GiB in mapping: it fits a 32 GB machine; rent 64 GB hosts.
+7. **Cut the idle share (37–41% of serving).** Scale in 1-minute windows instead of 5, start GPUs before each
+   break (the programme is known), and use less headroom with a short request queue; together we expect 15–25% less
+   GPU spend. Not yet measured.
+8. **Cut the CPU work per request (~115 of 208 ms).** Keep PyTorch's cached GPU memory between requests (12 ms),
+   cache decoded descriptors of recently matched map images (17–30 ms), and run pose RANSAC with fewer iterations
+   when the tracker gives a prior; then run 3–4 localizer processes per GPU on a 16-core host. We expect 20–30%
+   more queries per GPU. Not yet measured.
+9. **Query less often when tracking is good.** Every halving of the rate halves the serving cost: for example every
+   8–10 s instead of 5 s while fixes agree and the odometry reports good tracking.
 
 ## Assumptions and caveats
 
