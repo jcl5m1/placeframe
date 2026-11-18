@@ -69,8 +69,10 @@ REALM = "placeframe-dev"
 ODOMETRY = ("openvio", "openvins")  # add_recording_to_map.py --odometry; first = default
 
 
-def stages(odometry: str, new_map: bool = False) -> list[str]:  # mirrors add_recording_to_map.stages()
+def stages(odometry: str, new_map: bool = False, phone: bool = False) -> list[str]:  # mirrors add_recording_to_map.stages()
     merge = [] if new_map else ["register", "merge"]
+    if phone:  # a phone capture (--capture-session)
+        return ["capture", *merge, "reconstruct", "publish"]
     return ["calibrate", f"{odometry}-export", f"{odometry}-run", "stitch", "views", "capture", *merge,
             "reconstruct", "publish", "geolocate"]
 
@@ -431,6 +433,28 @@ def _inspect(head: bytes, tail: bytes, size: int) -> dict:
     return {"ok": True, "gps_fixes": len(fixes), "gps": gps_placement.median_fix(fixes), **meta}
 
 
+# A phone capture (already uploaded to Placeframe by the phone app) merged into an existing map: a job like a
+# recording upload's, which skips the Insta360 stages (add_recording_to_map.py --capture-session).
+@app.post("/api/phone-merges")
+async def create_phone_merge(body: dict, who: str = Depends(user)):
+    capture = str(body.get("capture_session_id") or "")
+    map_id = str(body.get("map_id") or "")
+    if not re.fullmatch(r"[0-9a-f-]{36}", capture) or not re.fullmatch(r"[0-9a-f-]{36}", map_id):
+        raise HTTPException(400, "capture_session_id and map_id (UUIDs) are required")
+    label = str(body.get("name") or "").strip()[:120] or f"phone capture {capture[:8]}"
+    jid = "phone-" + uuid.uuid4().hex[:12]
+    job = {"id": jid, "upload": None, "file": None, "capture_session": capture, "filename": label, "map_id": map_id,
+           "new_map": False, "group": None, "folder": "", "new_name": str(body.get("new_name") or "").strip() or None,
+           "replace": bool(body.get("replace")), "odometry": ODOMETRY[0], "user": who, "state": "queued",
+           "created": time.time()}
+    jd = JOBS / jid
+    jd.mkdir(parents=True, exist_ok=True)
+    (jd / "job.json.tmp").write_text(json.dumps(job, indent=2))
+    (jd / "job.json.tmp").replace(jd / "job.json")
+    _queue.put(jid)
+    return {"job_id": jid}
+
+
 @app.post("/api/uploads")
 async def create_upload(body: dict, who: str = Depends(user)):
     name = Path(str(body.get("filename", ""))).name
@@ -623,7 +647,8 @@ def _run_job(jid: str, j: dict) -> None:
         if base:  # an earlier recording of the same upload group already built the map: merge into it
             j = _set(jid, new_map=False, map_id=base["map_id"], combined_into=base["job"]) or _job(jid)
     target = ["--new-map"] if j.get("new_map") else ["--map", j["map_id"]]
-    cmd = [sys.executable, "-u", str(REPO / "add_recording_to_map.py"), j["file"], *target,
+    source = ["--capture-session", j["capture_session"]] if j.get("capture_session") else [j["file"]]
+    cmd = [sys.executable, "-u", str(REPO / "add_recording_to_map.py"), *source, *target,
            "--job-dir", str(JOBS / jid / "work"), "--odometry", j.get("odometry") or ODOMETRY[0]]
     pending_name = _pending().get(j.get("group") or "", {}).get("name")
     default = ((pending_name or _new_map_name(j["filename"], j.get("folder") or "")) if j.get("new_map")
@@ -660,7 +685,7 @@ async def jobs(who: str = Depends(user)):
             continue
         log = jd.parent / "log.txt"
         lines = log.read_text(errors="replace").splitlines() if log.exists() else []
-        names = stages(j.get("odometry") or ODOMETRY[0], bool(j.get("new_map")))
+        names = stages(j.get("odometry") or ODOMETRY[0], bool(j.get("new_map")), bool(j.get("capture_session")))
         done = [s for s in names if (jd.parent / "work" / f".done-{s}").exists()]
         current = next((s for s in names if s not in done), None) if j["state"] == "running" else None
         out.append(j | {"stages": names, "done": done, "current": current, "log": lines[-60:],

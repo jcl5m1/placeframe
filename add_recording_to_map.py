@@ -10,7 +10,12 @@ Every stage writes a marker into the job directory, so re-running the same comma
 completed stage.
 
   uv run add_recording_to_map.py VID.insv --map <localization-map-id> --job-dir ~/pf_mapper/jobs/<id> \
-      [--name "house v2"] [--replace] [--odometry openvio|openvins]
+      [--name "place v2"] [--replace] [--odometry openvio|openvins]
+
+A phone capture already uploaded to Placeframe (frames with the phone's AR poses, e.g. from the Flutter app) is
+merged the same way; it skips the Insta360 stages:
+
+  uv run add_recording_to_map.py --capture-session <capture id> --map <localization-map-id> --job-dir ...
 
 Odometry backends (both run from local Docker images and write the IMU trajectory to <job>/ov.tum):
   openvio  (default) OpenVIO with its native dual-fisheye 360 model          image openvio:local
@@ -49,8 +54,10 @@ OPENVIO_NOISE = ["--imu.gyro_noise=4.144e-04", "--imu.accel_noise=2.94e-03",
 ODOMETRY = ("openvio", "openvins")
 
 
-def stages(odometry: str = "openvio", new_map: bool = False) -> list[str]:
+def stages(odometry: str = "openvio", new_map: bool = False, phone: bool = False) -> list[str]:
     merge = [] if new_map else ["register", "merge"]
+    if phone:  # a phone capture: already has poses (--capture-session)
+        return ["capture", *merge, "reconstruct", "publish"]
     return ["calibrate", f"{odometry}-export", f"{odometry}-run", "stitch", "views", "capture", *merge,
             "reconstruct", "publish", "geolocate"]
 
@@ -60,7 +67,8 @@ STAGES = stages()
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("insv")
+    ap.add_argument("insv", nargs="?", help="the Insta360 .insv recording (or use --capture-session)")
+    ap.add_argument("--capture-session", help="merge this Placeframe capture (phone frames with AR poses) instead")
     target = ap.add_mutually_exclusive_group(required=True)
     target.add_argument("--map", help="target localization map id (merge the recording into it)")
     target.add_argument("--new-map", action="store_true", help="build the recording as a new map of its own")
@@ -70,6 +78,8 @@ def main() -> None:
     ap.add_argument("--register-frames", type=int, default=40, help="frames sampled for registration")
     ap.add_argument("--odometry", choices=ODOMETRY, default="openvio", help="odometry backend (default openvio)")
     args = ap.parse_args()
+    if bool(args.insv) == bool(args.capture_session):
+        ap.error("give either an .insv recording or --capture-session")
 
     job = Path(args.job_dir).expanduser()
     job.mkdir(parents=True, exist_ok=True)
@@ -77,7 +87,7 @@ def main() -> None:
     if odo_file.exists() and odo_file.read_text().strip() != args.odometry:
         raise SystemExit(f"{job} was started with --odometry {odo_file.read_text().strip()}; use a new job dir")
     odo_file.write_text(args.odometry)
-    insv = str(Path(args.insv).expanduser().resolve())
+    insv = str(Path(args.insv).expanduser().resolve()) if args.insv else ""
     api = PlaceframeApi()
 
     def run_stage(name, fn):
@@ -93,6 +103,16 @@ def main() -> None:
 
     forget_other_target(job, args.map)
     py = [sys.executable, "-u"]
+    if args.capture_session:  # a phone capture: its frames already carry poses; register, merge and build it
+        run_stage("capture", lambda: fetch_capture(api, job, args.capture_session))
+        if not args.new_map:
+            run_stage("register", lambda: register(api, job, args.map, args.register_frames))
+            run_stage("merge", lambda: merge(api, job, args.map))
+        run_stage("reconstruct", lambda: reconstruct(api, job, args.map, args.name))
+        run_stage("publish", lambda: publish(api, job, args.map, args.replace))
+        result = json.loads((job / "result.json").read_text())
+        log(f"== COMPLETE new map {result['map_id']} '{result['name']}'")
+        return
     run_stage("calibrate", lambda: sh(py + [str(HERE / "insta360_dualfisheye_to_placeframe.py"), insv,
                                             "-o", str(job / "fisheye"), "--loop-closure"]))
     def odometry() -> list[str]:
@@ -133,6 +153,18 @@ def main() -> None:
 
 
 TARGET_STAGES = ("register", "merge", "reconstruct", "publish", "geolocate")
+
+
+def fetch_capture(api: "PlaceframeApi", job: Path, capture_id: str) -> None:
+    """A phone capture from Placeframe, as the merge expects a converted recording: capture/capture.tar."""
+    (job / "capture").mkdir(parents=True, exist_ok=True)
+    api.download(f"/capture_sessions/{capture_id}/tar", job / "capture/capture.tar")
+    with tarfile.open(job / "capture/capture.tar") as tf:
+        manifest = json.load(tf.extractfile("manifest.json"))
+        frames = len(tf.extractfile("rig0/frames.csv").read().decode().splitlines()) - 1
+    (job / "capture/conversion.json").write_text(json.dumps({"pose_source": "phone AR odometry (ARCore/ARKit)",
+                                                             "capture_session": capture_id, "frames": frames}))
+    log(f"phone capture {capture_id}: {frames} frames, {len(manifest['rigs'][0]['cameras'])} camera")
 TARGET_FILES = ("registration.json", "base_capture.tar", "merged.tar", "conversion.json", "reconstruct.json",
                 "result.json")
 
@@ -231,7 +263,12 @@ def register(api: PlaceframeApi, job: Path, map_id: str, n_frames: int) -> None:
         rows = tf.extractfile("rig0/frames.csv").read().decode().splitlines()[1:]
     frames = [r.split(",") for r in rows]
     cam_cfg = manifest["rigs"][0]["cameras"][0]["camera_config"]
-    views = parse_views(None, len(manifest["rigs"][0]["cameras"]), 0.0)
+    # An Insta360 recording is localized through its extracted pinhole views; a phone capture through its own
+    # single camera (the camera is the rig), whose images are in the capture.
+    phone = not (job / "views").exists()
+    camera_id = manifest["rigs"][0]["cameras"][0]["id"]
+    views = [] if phone else parse_views(None, len(manifest["rigs"][0]["cameras"]), 0.0)
+    capture_tar = tarfile.open(job / "capture/capture.tar") if phone else None
     # At least n_frames, and one every ~5 s of a long recording, so heading drift is sampled densely enough.
     duration_s = (int(frames[-1][0]) - int(frames[0][0])) / 1000
     n = min(len(frames), max(n_frames, int(duration_s / 5)))
@@ -242,6 +279,9 @@ def register(api: PlaceframeApi, job: Path, map_id: str, n_frames: int) -> None:
         R_new = Rotation.from_quat([float(x) for x in f[4:8]]).as_matrix()
         C_new = np.array([float(x) for x in f[1:4]])
         best = None
+        if phone:
+            loc = api.localize(map_id, capture_tar.extractfile(f"rig0/{camera_id}/{ts}.jpg").read(), cam_cfg)
+            best = {**loc, "view": None} if loc else None
         for k, vw in enumerate(views):
             img = job / "views/work/images/rig0" / vw.name / f"{ts}.jpg"
             loc = api.localize(map_id, img.read_bytes(), cam_cfg)
@@ -258,10 +298,11 @@ def register(api: PlaceframeApi, job: Path, map_id: str, n_frames: int) -> None:
         t_cam_map = np.array([t["x"], t["y"], t["z"]])
         R_map_cam = R_cam_map.T
         C_map = -R_map_cam @ t_cam_map
-        R_map_rig = R_map_cam @ views[best["view"]].rig_from_cam().T  # cam_from_rig
+        R_map_rig = R_map_cam if best["view"] is None else R_map_cam @ views[best["view"]].rig_from_cam().T  # cam_from_rig
         pairs.append({"ts": int(ts), "R_new": R_new, "C_new": C_new, "R_map": R_map_rig, "C_map": C_map,
                       "confidence": best["confidence"]})
-        log(f"  frame {int(ts) / 1000:6.1f}s: localized via view {best['view']} (confidence {best['confidence']:.2f})")
+        via = "the phone camera" if best["view"] is None else f"view {best['view']}"
+        log(f"  frame {int(ts) / 1000:6.1f}s: localized via {via} (confidence {best['confidence']:.2f})")
     if len(pairs) < 4:
         raise SystemExit(f"Registration failed: only {len(pairs)} frames localized. Does the recording overlap the map?")
 
