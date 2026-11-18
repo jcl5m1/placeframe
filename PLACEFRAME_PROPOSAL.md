@@ -62,6 +62,23 @@ with no usable views).
 
 <video src="proposal_media/fairhills_walk_5x.mp4" poster="proposal_media/fairhills_walk_poster.jpg" controls preload="none" playsinline style="width:100%;border-radius:6px"></video>
 
+**The phone app.** A small Flutter app for Android and iOS that needs only the phone: no Unity, no capture rig
+(pull request [placeframe-capture-tool#24](https://github.com/outernet-foundation/placeframe-capture-tool/pull/24)).
+
+- **Localize:** pick maps from a list (in folders\*), or the maps near the phone's GPS position. The app sends camera
+  frames with their ARCore/ARKit pose. It uses tracked localization when the server offers it (extension 4), and
+  single-frame `/localize` otherwise. The screen shows a top-down view: the map near the phone's height, the
+  phone's path on the map, and the localizations. The pose updates at 10 Hz from AR odometry between
+  localizations, and the query rate is adaptive.
+- **Capture:** record frames with AR poses and GPS, for a new map or to add to an existing map\*. While recording,
+  the screen shows the latest image, a top-down view of the path and the AR platform's 3D feature points, the
+  distance walked, and the tracking state. The app uploads the capture, starts the build and creates the map.
+- **Light on data\*:** the app downloads only small top-down images of the map near the phone's height, not the
+  point cloud. It falls back to `/reconstructions/{id}/points` on a stock server.
+
+\* With our optional map-updater service next to Placeframe. With the stock API alone, the app lists maps
+without folders, builds new maps only, and draws the map from its points.
+
 ## Already on your branches (we will drop ours)
 
 | Our change | Yours |
