@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from asyncio import get_running_loop
 from concurrent.futures import ThreadPoolExecutor
+from io import BytesIO
 from functools import partial
 from os import environ
 from pathlib import Path
@@ -29,6 +30,7 @@ from litestar.openapi.config import OpenAPIConfig
 from litestar.openapi.spec import Server
 from litestar.params import Body
 from litestar.status_codes import HTTP_422_UNPROCESSABLE_ENTITY
+from PIL import Image as PILImage, UnidentifiedImageError
 from core.transform import Float3, Float4, Transform
 from pydantic import BeforeValidator, Json
 from scipy.spatial.transform import Rotation
@@ -150,6 +152,12 @@ async def localize_tracked(
     image = await data.image.read()
     t, q = data.odometry_from_camera.translation, data.odometry_from_camera.rotation
     odom_from_camera = pose_from_quaternion([t.x, t.y, t.z], [q.x, q.y, q.z, q.w])
+    if not data.reconstruction_ids:
+        raise HTTPException(status_code=HTTP_422_UNPROCESSABLE_ENTITY, detail="No reconstructions to localize against")
+    try:
+        PILImage.open(BytesIO(image)).verify()
+    except (UnidentifiedImageError, OSError) as e:
+        raise HTTPException(status_code=HTTP_422_UNPROCESSABLE_ENTITY, detail="The image could not be read") from e
     results: list[tuple[UUID, Tracker, FrameResult, int]] = []
     for id in data.reconstruction_ids:
         if id not in _maps:

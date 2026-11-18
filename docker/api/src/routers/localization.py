@@ -25,7 +25,7 @@ from litestar.di import Provide
 from litestar.enums import RequestEncodingType
 from litestar.exceptions import HTTPException
 from litestar.params import Body
-from litestar.status_codes import HTTP_422_UNPROCESSABLE_ENTITY, HTTP_502_BAD_GATEWAY
+from litestar.status_codes import HTTP_404_NOT_FOUND, HTTP_422_UNPROCESSABLE_ENTITY, HTTP_502_BAD_GATEWAY
 from placeframe_localizer_client import ApiClient, ApiException, Configuration
 from placeframe_localizer_client.api.default_api import DefaultApi
 from placeframe_localizer_client.models.axis_convention import AxisConvention as LocalizerAxisConvention
@@ -176,6 +176,11 @@ async def localize_tracked(
     received_at = datetime.now(UTC)
     image = await data.image.read()
     maps = {m.reconstruction_id: m for m in await fetch_localization_maps(session, data.map_ids)}
+    if not maps:  # unknown or inactive maps: nothing to localize against
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail=f"No active localization map with id {', '.join(str(i) for i in data.map_ids) or '(none given)'}",
+        )
     manifest_rows = (
         await session.execute(
             select(Reconstruction.id, Reconstruction.manifest).where(Reconstruction.id.in_(maps.keys()))
