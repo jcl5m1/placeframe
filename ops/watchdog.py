@@ -182,6 +182,8 @@ class Watchdog:
                 check()
             except Exception as e:  # a broken check must never stop the others
                 self.incident("watchdog-error", f"{check.__name__} raised {e!r}", target=check.__name__)
+            else:  # e.g. a 502 while the API restarted: closed once the check passes again
+                self.resolve("watchdog-error", check.__name__, "the check passes again")
         self.state["last_run"] = self.now
         self.state["last_actions"] = self.actions[-30:]
         if not self.dry:
