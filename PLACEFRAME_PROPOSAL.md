@@ -14,7 +14,8 @@ localizing phones against those maps. Our fork is based on `main` (May 2026); we
   ~209,000 log lines).
 - **Builds 3–6× faster, and linear in size:** a prior-pose mapper and GPU bundle adjustment build an 8,370-image,
   three-recording house map in 35 min. Half-precision descriptors cut a 9,072-image build's peak RAM from 18 GB to
-  11.9 GiB with the same map quality, so a ~20,000-image venue should fit one 32 GB machine.
+  11.9 GiB with the same map quality. Measured at venue size (18,144 images), a build peaks at 23.4 GiB, so a
+  venue map fits one 32 GB machine.
 - **Merges must follow odometry heading drift:** one rigid transform left part of a house as a second copy rotated
   32°. A piecewise alignment raised the map points shared with the existing map from 15% to 70%, and cut confidently
   wrong phone fixes from 31 to 6 of 286.
@@ -23,7 +24,8 @@ localizing phones against those maps. Our fork is based on `main` (May 2026); we
   would value your view.
 - **Cost:** a 10,000 m² venue map builds in ~1.3 h on one RTX 3090. Serving 3,000 attendees costs ~$28 per event
   day on marketplace GPUs with adaptive querying, which sends 4× fewer queries than 1 Hz at the same accuracy. Map
-  egress between clouds can cost more than the GPUs.
+  egress between clouds can cost more than the GPUs. The CPU, not the GPU or the API, limits a localizer GPU:
+  ~115 ms of each 208 ms request is CPU work, and a slow-CPU host gives half the throughput from the same GPU.
 - **What we ask:** review of the three open pull requests, and which of the larger changes you want as pull
   requests (#167).
 
@@ -127,7 +129,8 @@ with no usable views).
    machine. Now descriptors stay in float16, each matching batch moves only its own images to the GPU, and OPQ/PQ
    train on a seeded 1M-descriptor sample. Same map: peak RAM 11.9 GiB, peak GPU 4.9 GB, 8,556 registered images
    (full precision: 8,508 and 8,532), median reprojection error 0.68 px (0.69); LightGlue's matches are identical in
-   half and full precision. Issue #163, pull request #166.
+   half and full precision. At venue size (18,144 images, built on rented RTX 3090s) the peak is 23.4 GiB, in
+   mapping, with the same map quality (median reprojection error 0.69 px). Issue #163, pull request #166.
 
 A cost study (building and serving maps for a 10,000 m² venue with 3,000 attendees, measured on this pipeline):
 [Cost study v2](https://28palomas-rtx3090.tail3fa327.ts.net/placeframe/reports/DYddaNp1_WGNuSrMNbhQS02Wke9Mxb6jew/)
