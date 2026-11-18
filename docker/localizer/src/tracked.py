@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass
+from os import environ
+from threading import Lock
 from typing import Any, cast
 
 import numpy as np
@@ -23,7 +26,7 @@ from numpy import asarray, float32, vstack
 from pycolmap import AbsolutePoseEstimationOptions, RANSACOptions
 from pycolmap import Camera as ColmapCamera
 from pycolmap._core import Rigid3d, estimate_and_refine_absolute_pose, set_random_seed  # type: ignore  # noqa: PLC2701 — no public API
-from torch import cuda, inference_mode, manual_seed, topk  # type: ignore
+from torch import Tensor, cuda, inference_mode, manual_seed, topk  # type: ignore
 
 from . import localize
 from .build_metrics import build_localization_metrics
@@ -38,6 +41,11 @@ RETRIEVAL_TOP_K = 16
 PLACE_RADIUS_M = 4.0  # retrieved images within this distance of a group's first image form one place
 MAX_PLACES = 4
 CONFIDENT_RETRIEVAL_TOP_K = 6
+# CPU work per request (see the pipeline repo's cost study): decoded map features stay on the GPU for recently
+# matched images, and PyTorch's cached GPU memory is released only above a limit (it was released after every
+# request so a reconstruction on the same GPU is not starved; the limit keeps that bound).
+FEATURE_CACHE_IMAGES = int(environ.get("LOCALIZER_FEATURE_CACHE_IMAGES", "1000"))  # per map and process; 0: off
+RELEASE_GPU_MEMORY_ABOVE_BYTES = int(float(environ.get("LOCALIZER_RELEASE_GPU_MEMORY_ABOVE_GB", "4")) * 2**30)
 PRIOR_RADIUS_M = 4.0  # images this close to the predicted pose and facing a similar way are matched too
 PRIOR_MAX_ANGLE_DEG = 75.0
 PRIOR_TOP_K = 8
@@ -113,11 +121,7 @@ def localize_candidates(
     indices = sorted({i for _, g in groups for i in g})
     image_ids = [map.ordered_image_ids[i] for i in indices]
 
-    descriptors = decode_descriptors(
-        map.opq_matrix, map.product_quantizer, {image_id: map.pq_codes[image_id] for image_id in image_ids}
-    )
-    keypoints = Keypoints({str(i): from_numpy(map.keypoints[i]).to(localize.DEVICE) for i in image_ids})
-    descriptor_tensors = Descriptors({str(i): from_numpy(descriptors[i]).to(localize.DEVICE) for i in image_ids})
+    keypoints, descriptor_tensors = _map_features(map, image_ids)
     sizes = {str(i): map.image_sizes[str(i)] for i in image_ids}
     keypoints["query"] = query_keypoints.to(localize.DEVICE)
     descriptor_tensors["query"] = query_descriptors.to(localize.DEVICE)
@@ -215,4 +219,32 @@ def _near_prediction(predicted: Matrix4, geometry: _ImageGeometry, similarity: n
 # PyTorch keeps freed GPU memory cached; a long localization session otherwise holds 15-20 GB, which a
 # reconstruction running on the same GPU then can't get.
 def release_gpu_memory() -> None:
-    cuda.empty_cache()
+    if cuda.is_available() and cuda.memory_reserved() > RELEASE_GPU_MEMORY_ABOVE_BYTES:
+        cuda.empty_cache()
+
+
+_feature_cache: dict[int, OrderedDict[int, tuple[Tensor, Tensor]]] = {}
+_feature_lock = Lock()
+
+
+def _map_features(map: Map, image_ids: list[int]) -> tuple[Keypoints, Descriptors]:
+    """Keypoints and decoded descriptors of map images, on the GPU; recently used images come from a cache."""
+    with _feature_lock:
+        cache = _feature_cache.setdefault(id(map), OrderedDict())
+        found = {i: cache[i] for i in image_ids if i in cache}
+        for i in found:
+            cache.move_to_end(i)
+    missing = [i for i in image_ids if i not in found]
+    if missing:
+        decoded = decode_descriptors(map.opq_matrix, map.product_quantizer, {i: map.pq_codes[i] for i in missing})
+        new = {
+            i: (from_numpy(map.keypoints[i]).to(localize.DEVICE), from_numpy(decoded[i]).to(localize.DEVICE))
+            for i in missing
+        }
+        found |= new
+        if FEATURE_CACHE_IMAGES:
+            with _feature_lock:
+                cache.update(new)
+                while len(cache) > FEATURE_CACHE_IMAGES:
+                    cache.popitem(last=False)
+    return (Keypoints({str(i): found[i][0] for i in image_ids}), Descriptors({str(i): found[i][1] for i in image_ids}))
