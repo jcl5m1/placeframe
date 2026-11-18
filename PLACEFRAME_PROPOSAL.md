@@ -45,12 +45,12 @@ The three Placeframe pull requests are independent: they merge in any order. The
 
 ## What it looks like
 
-**The map.** A house built from three Insta360 X5 walks merged into one map (7,554 images; extensions 1–3 below),
+**The map.** A lake house built from three Insta360 X5 walks merged into one map (7,554 images; extensions 1–3 below),
 seen from above in our map visualizer. Points are coloured from the photos; the lines are the three walks (blue →
 yellow in time). Before the merge registration followed the X5's heading drift (extension 2), part of this house
 appeared twice, rotated 32°.
 
-![x5-house + 2 recordings (re-registered) in the visualizer, top-down](proposal_media/house_visualizer.jpg)
+![lakehouse + 2 recordings (re-registered) in the visualizer, top-down](proposal_media/lakehouse_visualizer.jpg)
 
 **A phone walking through a second house.** A recorded 5-minute Android walk through all three floors of another
 house (Fairhills Ct, a three-recording map of 8,370 images), replayed through tracked
