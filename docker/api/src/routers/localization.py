@@ -176,10 +176,10 @@ async def localize_tracked(
     received_at = datetime.now(UTC)
     image = await data.image.read()
     maps = {m.reconstruction_id: m for m in await fetch_localization_maps(session, data.map_ids)}
-    if not maps:  # unknown or inactive maps: nothing to localize against
+    if not maps:  # unknown map ids: nothing to localize against
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND,
-            detail=f"No active localization map with id {', '.join(str(i) for i in data.map_ids) or '(none given)'}",
+            detail=f"No localization map with id {', '.join(str(i) for i in data.map_ids) or '(none given)'}",
         )
     manifest_rows = (
         await session.execute(
