@@ -15,10 +15,10 @@ class MapInfo {
   String get name => (json['name'] as String?) ?? id.substring(0, 8);
   bool get active => json['active'] == true;
   String get createdAt => (json['created_at'] as String?) ?? '';
+  // Where the map is listed in the map picker ("a/b"), from the optional map-updater; empty: top level.
   String folder = '';
   // Placed on the globe (from the capture's GPS); unplaced maps keep their position at the Earth's centre.
   bool get placed => ['position_x', 'position_y', 'position_z'].any((k) => ((json[k] as num?) ?? 0) != 0);
-  bool get experimental => folder == 'experiments' || folder.startsWith('experiments/');
   String get reconstructionId => json['reconstruction_id'] as String;
 }
 
@@ -26,6 +26,31 @@ class MapInfo {
 // the latest frame, with the alignment that turns any later odometry pose into a map pose.
 class TrackedLocalization {
   TrackedLocalization(this.json);
+
+  // From a single-frame result (POST /localize, for servers without /localize/track): the frame's best match gives
+  // the alignment (odometry pose of the camera × its map pose inverted), and its confidence stands in for the
+  // tracker's probability.
+  factory TrackedLocalization.fromSingleFrame(Pose odomFromCamera, List<Localization> found) {
+    if (found.isEmpty) {
+      return TrackedLocalization(
+          {'probability': 0.0, 'fixes': 0, 'hypotheses': 0, 'unknown': 1.0, 'frame_candidates': 0, 'frame_agreed': false});
+    }
+    final best = found.reduce((a, b) => a.confidence >= b.confidence ? a : b);
+    return TrackedLocalization({
+      'map_id': best.mapId,
+      'probability': best.confidence,
+      'fixes': 1,
+      'hypotheses': found.length,
+      'unknown': 1 - best.confidence,
+      'odometry_from_map_transform': (odomFromCamera * best.mapFromCamera.inverse()).toTransformJson(),
+      'frame_candidates': found.length,
+      'frame_agreed': true,
+      'frame_confidence': best.confidence,
+      'frame_inliers': best.metrics['num_inliers'] as int?,
+      'frame_source': 'single frame',
+    });
+  }
+
   final Map<String, dynamic> json;
   String? get mapId => json['map_id'] as String?;
   double get probability => (json['probability'] as num).toDouble();
@@ -97,33 +122,44 @@ class PlaceframeApi {
     }
     final list = await _get('/localization-maps', query) as List<dynamic>;
     final maps = list.map((m) => MapInfo(m as Map<String, dynamic>)).toList();
-    final folders = await mapFolders();
+    final folders = await _folders();
     for (final m in maps) {
       m.folder = folders[m.id] ?? '';
     }
     return maps;
   }
 
-  // The map folders kept by the mapper service (same login); experiments live under "experiments/".
-  Future<Map<String, String>> mapFolders() async {
+  // Map folders from the optional map-updater (see Config.mapperUrl); none when it is unset or unreachable.
+  Future<Map<String, String>> _folders() async {
+    if (config.mapperUrl.isEmpty) return {};
     try {
-      final r = await _client.get(Uri.parse('${config.serverUrl}/mapper/api/maps'), headers: await _headers());
+      final r = await _client.get(Uri.parse('${config.mapperUrl}/maps'), headers: await _headers());
       if (r.statusCode != 200) return {};
       return {
         for (final m in (jsonDecode(r.body) as List<dynamic>).cast<Map<String, dynamic>>())
-          m['id'] as String: (m['folder'] as String?) ?? ''
+          if (m['id'] is String) m['id'] as String: (m['folder'] as String?) ?? ''
       };
     } catch (_) {
       return {};
     }
   }
 
-  // The map's 3D points (map frame) from the mapper service, most-observed first: x, y, z per point.
-  Future<Float32List?> mapPoints(String mapId) async {
-    final r = await _client.get(Uri.parse('${config.serverUrl}/mapper/api/maps/$mapId/points'), headers: await _headers());
-    if (r.statusCode != 200) return null;
+  // A reconstruction's 3D points in the map frame (OpenCV axes): x, y, z per point, at most [limit] points (evenly
+  // spaced through the list). The response is a little-endian uint32 count, then float32 positions, then colours.
+  Future<Float32List?> mapPoints(String reconstructionId, {int limit = 80000}) async {
+    final r = await _client.get(_uri('/reconstructions/$reconstructionId/points', {'axis_convention': 'OPENCV'}),
+        headers: await _headers());
+    if (r.statusCode != 200 || r.bodyBytes.length < 4) return null;
     final b = ByteData.sublistView(r.bodyBytes);
-    return Float32List.fromList([for (var i = 0; i + 4 <= b.lengthInBytes; i += 4) b.getFloat32(i, Endian.little)]);
+    final count = b.getUint32(0, Endian.little);
+    if (r.bodyBytes.length < 4 + count * 12) return null;
+    final n = count < limit ? count : limit;
+    final out = <double>[];
+    for (var k = 0; k < n; k++) {
+      final o = 4 + (k * count ~/ n) * 12; // evenly spaced through the list
+      out..add(b.getFloat32(o, Endian.little))..add(b.getFloat32(o + 4, Endian.little))..add(b.getFloat32(o + 8, Endian.little));
+    }
+    return Float32List.fromList(out);
   }
 
   // One frame of a tracked session: the image, its camera and its odometry pose (OpenCV camera axes, sensor image
@@ -182,6 +218,21 @@ class PlaceframeApi {
         'create': {'capture_session_id': captureId},
         'options': options,
       }) as Map<String, dynamic>;
+
+  // Asks the map-updater (Config.mapperUrl) to merge an uploaded capture into an existing map; returns its job id.
+  Future<String> mergeIntoMap(String captureId, String mapId, String label) async {
+    final r = await _client.post(Uri.parse('${config.mapperUrl}/phone-merges'),
+        headers: {...await _headers(), 'Content-Type': 'application/json'},
+        body: jsonEncode({'capture_session_id': captureId, 'map_id': mapId, 'name': label}));
+    return (_check(r) as Map<String, dynamic>)['job_id'] as String;
+  }
+
+  // A map-updater job: state ("queued", "running", "succeeded", "failed"), stage, and the new map when done.
+  Future<Map<String, dynamic>?> mergeJob(String jobId) async {
+    final r = await _client.get(Uri.parse('${config.mapperUrl}/jobs'), headers: await _headers());
+    final jobs = (_check(r) as List<dynamic>).cast<Map<String, dynamic>>();
+    return jobs.where((j) => j['id'] == jobId || j['job_id'] == jobId).firstOrNull;
+  }
 
   Future<Map<String, dynamic>> reconstruction(String id) async =>
       await _get('/reconstructions/$id') as Map<String, dynamic>;

@@ -4,14 +4,19 @@ A lightweight Placeframe client for iOS and Android without Unity: **localizatio
 Almost all code is shared Dart; each platform adds one small native module that streams camera frames from the
 platform's AR tracking (ARKit / ARCore), because localization needs the camera intrinsics and capture needs a pose
 for every frame.
+Unlike `apps/CaptureTool` (Unity, which captures with the ZED box), it needs only the phone.
 
 ## What it does
 
 - **Log in** to a Placeframe server (Keycloak password grant, client `placeframe-api`, realm `placeframe-dev`; the
   same flow as the Unity client).
 - **Localize**: choose maps near your GPS position (`GET /localization-maps` with position + radius) or from all
-  maps, then localize live (`POST /localize`, one request in flight at a time). Shows the device position in the
-  map, confidence, latency and the success rate.
+  maps, then localize live, one request in flight at a time. With a server that offers tracked localization
+  (`POST /localize/track`, frames sent with their AR odometry pose and a session id), the server keeps the
+  candidate places and returns the most probable pose; otherwise the app uses single-frame `POST /localize` and
+  aligns each match to the AR odometry itself. Shows a top-down view: the map's points near the phone's height
+  (`GET /reconstructions/{id}/points`), the phone's path registered to the map, and the localizations; the pose
+  updates at 10 Hz from AR odometry between localizations.
 - **Capture**: record frames + AR poses + the best GPS fix while walking, then upload (`POST /capture_sessions`),
   build (`POST /reconstructions`), follow the build status and create a map when it succeeds. The capture includes
   `location.json`, so Placeframe places the new map on the globe and **Nearby** finds it.
