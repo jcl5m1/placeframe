@@ -36,12 +36,16 @@ def main() -> None:
     ap.add_argument("out", type=Path)
     ap.add_argument("--conversion", type=Path)
     ap.add_argument("--name", default="")
+    ap.add_argument("--options", type=Path, help="reconstruction options JSON (default: chosen from the capture)")
     ap.add_argument("--staged", help="reconstruction id whose capture is already in R2 (jobs/<id>/capture.tar)")
     ap.add_argument("--resume", action="store_true",
                     help="with --staged: keep its stage checkpoints, so the worker resumes after the last one")
     a = ap.parse_args()
     conv_path = a.conversion or a.capture.with_name("conversion.json")
-    options, _ = choose_reconstruction_options(a.capture, json.loads(conv_path.read_text()))
+    if a.options:
+        options = json.loads(a.options.read_text())
+    else:
+        options, _ = choose_reconstruction_options(a.capture, json.loads(conv_path.read_text()))
     rid, cid = a.staged or str(uuid.uuid4()), str(uuid.uuid4())
     prefix = f"jobs/{rid}"
     s3, bucket = r2.client()

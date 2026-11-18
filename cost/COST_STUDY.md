@@ -94,6 +94,25 @@ Stage times on the rented hosts (two Quebec hosts; both slower than the home mac
 from Vast (preemption, or the 40 GB disk); the job resumed from its feature and match checkpoints each time. The
 build cost ~$1.00 in total. Data: `cost/venue_build/`.
 
+**Tiles instead of one map.** Overlapping tiles in one world frame limit build memory per tile and build in
+parallel. Serving stays at one map per query if the overlap is wide enough: the localizer sends each tracked query
+to the tile whose core holds the predicted position, and changes tile only when the phone is half the overlap
+past the core border (`TileRouter`, localizer `tiles.py`). We tested it on the Fairhills house: its capture split
+into 2 tiles with a 3 m overlap (`fleet/tiler.py`), each tile built on a rented RTX 3090, and the recorded
+286-frame walk replayed against the single map and the routed tiles (`bench/tile_replay.py`, `tile_analyze.py`):
+
+| | Single map (8,370 images) | 2 tiles (6,102 + 7,368 images) |
+|---|---|---|
+| Served pose within 0.5 m / wrong by > 1 m | 277 / 6 of 285 | 278 / 5 of 285 |
+| Queries matched against more than one map | — | 1 of 286 (the first frame, no prediction) |
+| Tile switches on the walk; served pose jump at a switch | — | 8; 6–25 mm |
+| Peak build memory | — | 7.9 / 10.4 GiB |
+
+In this small house the 3 m overlap repeats 63% of the frames; in a venue, tiles of ~50 × 50 m with a 5 m
+overlap repeat ~44%, and a ~19,700-image venue in 4 such tiles needs ~7,100 images (~10 GiB) per tile. Data:
+`cost/tiles_fairhills/`. Next: send the first query to one tile with one retrieval over all tiles, and use the
+router in `POST /localization/track`.
+
 ## 2. Rented, right-sized GPU
 
 The x4 map (9,072 images) built on one interruptible Vast.ai RTX 3090 with a host like ours (≥8 cores, ≥32 GB RAM),

@@ -1,0 +1,45 @@
+{
+ "source": "/home/jcl5m1/pf_tiles/fairhills/capture.tar",
+ "frames": 1458,
+ "images": 8748,
+ "images_per_tile": 4380,
+ "overlap_m": 3.0,
+ "tile_count": 2,
+ "duplication": 1.63,
+ "tiles": [
+  {
+   "name": "tile_00",
+   "capture": "/home/jcl5m1/pf_tiles/fairhills/tiles/tile_00/capture.tar",
+   "core_frames": 729,
+   "frames": 1089,
+   "images": 6534,
+   "core_bbox_xz": [
+    -7.7,
+    -2.4,
+    1.36,
+    4.14
+   ],
+   "extent_m": [
+    9.1,
+    6.5
+   ]
+  },
+  {
+   "name": "tile_01",
+   "capture": "/home/jcl5m1/pf_tiles/fairhills/tiles/tile_01/capture.tar",
+   "core_frames": 729,
+   "frames": 1284,
+   "images": 7704,
+   "core_bbox_xz": [
+    -10.35,
+    4.15,
+    0.01,
+    12.75
+   ],
+   "extent_m": [
+    10.4,
+    8.6
+   ]
+  }
+ ]
+}

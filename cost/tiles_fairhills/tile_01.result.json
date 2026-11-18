@@ -1,0 +1,122 @@
+{
+  "name": "fairhills-tile-01",
+  "reconstruction_id": "a25ac44e-c6ef-4289-90aa-ec9822c556c3",
+  "r2_prefix": "jobs/a25ac44e-c6ef-4289-90aa-ec9822c556c3",
+  "options": {
+    "neighbors_count": 16,
+    "rig_verification": true,
+    "rotation_threshold": 180.0,
+    "use_prior_position": true,
+    "pose_prior_position_sigma_m": 1.0,
+    "bundle_adjustment_refine_sensor_from_rig": false
+  },
+  "upload_s": 243.9,
+  "total_s": 2879.0,
+  "stages": [
+    {
+      "state": "starting",
+      "phase": "downloading",
+      "dispatch": "a25ac44e-1",
+      "t": 121.6
+    },
+    {
+      "state": "running",
+      "phase": "downloading",
+      "dispatch": "a25ac44e-1",
+      "t": 136.9
+    },
+    {
+      "state": "running",
+      "phase": "extracting_features",
+      "dispatch": "a25ac44e-1",
+      "t": 152.2
+    },
+    {
+      "state": "running",
+      "phase": "training_product_quantizer",
+      "dispatch": "a25ac44e-1",
+      "t": 1295.9
+    },
+    {
+      "state": "running",
+      "phase": "matching_features",
+      "dispatch": "a25ac44e-1",
+      "t": 1311.2
+    },
+    {
+      "state": "running",
+      "phase": "verifying_geometry",
+      "dispatch": "a25ac44e-1",
+      "t": 1915.6
+    },
+    {
+      "state": "running",
+      "phase": "reconstructing",
+      "dispatch": "a25ac44e-1",
+      "t": 1961.7
+    },
+    {
+      "state": "running",
+      "phase": "uploading",
+      "dispatch": "a25ac44e-1",
+      "t": 2756.6
+    },
+    {
+      "state": "succeeded",
+      "phase": "uploading",
+      "dispatch": "a25ac44e-1",
+      "t": 2879.0
+    }
+  ],
+  "final_status": {
+    "dispatch": "a25ac44e-1",
+    "state": "succeeded",
+    "phase": "uploading",
+    "t": 1794980075.979915,
+    "memory": {
+      "process_peak_rss_gib": 10.44,
+      "process_rss_gib": 10.44,
+      "host_used_peak_gib": 128.92,
+      "host_total_gib": 503.5,
+      "gpu_used_peak_gib": 3.88
+    },
+    "current": null,
+    "total": null,
+    "attempt": null,
+    "metrics": {
+      "total_images": 7368,
+      "registered_images": 7368,
+      "registration_rate": 100.0,
+      "num_3d_points": 305394,
+      "average_keypoints_per_image": 556.8396936656283,
+      "reprojection_pixel_error_50th_percentile": 0.792494369,
+      "reprojection_pixel_error_90th_percentile": 1.518144669,
+      "track_length_50th_percentile": 4.0,
+      "percent_tracks_with_length_greater_than_or_equal_to_3": 80.84081547116185,
+      "all_verified_matches": 85798,
+      "all_verified_match_rate": 47.54616186021767,
+      "all_verified_match_inliers_mean": 123.02819413039931,
+      "all_verified_match_inliers_median": 73.0,
+      "stereo_verified_matches": 5450,
+      "stereo_verified_match_rate": 70.74247144340602,
+      "stereo_verified_match_inliers_mean": 163.08018348623852,
+      "stereo_verified_match_inliers_median": 131.0,
+      "same_sensor_verified_matches": 10682,
+      "same_sensor_verified_match_rate": 51.14430719142009,
+      "same_sensor_verified_match_inliers_mean": 165.74864257629656,
+      "same_sensor_verified_match_inliers_median": 87.0,
+      "cross_sensor_verified_matches": 34770,
+      "cross_sensor_verified_match_rate": 43.68419730130412,
+      "cross_sensor_verified_match_inliers_mean": 105.7528616623526,
+      "cross_sensor_verified_match_inliers_median": 63.0,
+      "map_image_count": 7368,
+      "map_point_count": 305394,
+      "map_avg_track_length": 5.386752850416184,
+      "map_bounding_volume_m3": 465.4887440711355,
+      "map_viewpoint_diversity": 0.9651497313503916,
+      "truth_alignment_rms_residual_m": 0.07930023353660376,
+      "truth_alignment_max_residual_m": 0.5056836957782531
+    },
+    "results_bytes": 1999616000
+  }
+}
