@@ -87,6 +87,10 @@ fetch('data.json').then(r => r.ok ? r.json() : Promise.reject(r.status)).then(d 
   $('title').textContent = d.title;
   $('when').textContent = `Published ${when(d.created)}` + (d.updated !== d.created ? ` · Updated ${when(d.updated)}` : '');
   doc.innerHTML = d.html;
+  // Links to other sites open in a new tab: inside the tailnet frame, sites like GitHub refuse to be framed.
+  for (const link of doc.querySelectorAll('a[href]')) {
+    if (link.origin !== location.origin) { link.target = '_blank'; link.rel = 'noopener'; }
+  }
   startComments();
 }).catch(() => { $('title').textContent = 'Report not found'; });
 
