@@ -1,0 +1,223 @@
+{
+ "build": [
+  {
+   "label": "House, full walk (measured)",
+   "images": 2268,
+   "minutes": [
+    5.721726190476191,
+    2.7666666666666666,
+    0.16666666666666666,
+    3.0900000000000003,
+    0.5866666666666667,
+    10.276666666666667
+   ],
+   "total_min": 22.608392857142857,
+   "cost": 0.05652098214285713,
+   "stages": [
+    "Preprocessing (CPU)",
+    "Feature extraction",
+    "Compression training",
+    "Matching",
+    "Geometric verification",
+    "Mapping"
+   ]
+  },
+  {
+   "label": "4 houses joined (measured)",
+   "images": 9072,
+   "minutes": [
+    22.886904761904763,
+    12.241666666666667,
+    0.67,
+    13.035,
+    2.5966666666666667,
+    7.944999999999999
+   ],
+   "total_min": 59.375238095238096,
+   "cost": 0.14843809523809523,
+   "stages": [
+    "Preprocessing (CPU)",
+    "Feature extraction",
+    "Compression training",
+    "Matching",
+    "Geometric verification",
+    "Mapping"
+   ]
+  },
+  {
+   "label": "10,000 m\u00b2 venue (projected)",
+   "images": 19700,
+   "minutes": [
+    50.0,
+    26.582984273956495,
+    1.4549162257495594,
+    28.3057208994709,
+    5.638705173427396,
+    17.25270061728395
+   ],
+   "total_min": 129.23502718988829,
+   "cost": 0.32308756797472066,
+   "stages": [
+    "Preprocessing (CPU)",
+    "Feature extraction",
+    "Compression training",
+    "Matching",
+    "Geometric verification",
+    "Mapping"
+   ]
+  }
+ ],
+ "serving": [
+  {
+   "attendees": 1000,
+   "rate": "Adaptive (0.19 q/s)",
+   "peak_gpus": 30,
+   "gpu_hours": 64.0,
+   "cost": [
+    5.24875,
+    0.416666666666667,
+    3.934583333333333
+   ],
+   "total": 9.6
+  },
+  {
+   "attendees": 1000,
+   "rate": "0.5 Hz",
+   "peak_gpus": 68,
+   "gpu_hours": 158.0,
+   "cost": [
+    13.812499999999998,
+    0.41666666666666613,
+    9.470833333333335
+   ],
+   "total": 23.7
+  },
+  {
+   "attendees": 1000,
+   "rate": "1 Hz",
+   "peak_gpus": 129,
+   "gpu_hours": 304.0,
+   "cost": [
+    27.624999999999996,
+    0.4166666666666678,
+    17.558333333333334
+   ],
+   "total": 45.6
+  },
+  {
+   "attendees": 1000,
+   "rate": "2 Hz",
+   "peak_gpus": 251,
+   "gpu_hours": 594.7,
+   "cost": [
+    55.24999999999999,
+    0.4166666666666643,
+    33.53333333333333
+   ],
+   "total": 89.19999999999999
+  },
+  {
+   "attendees": 3000,
+   "rate": "Adaptive (0.19 q/s)",
+   "peak_gpus": 89,
+   "gpu_hours": 188.7,
+   "cost": [
+    15.746249999999998,
+    1.25,
+    11.303749999999999
+   ],
+   "total": 28.299999999999997
+  },
+  {
+   "attendees": 3000,
+   "rate": "0.5 Hz",
+   "peak_gpus": 203,
+   "gpu_hours": 458.7,
+   "cost": [
+    41.4375,
+    1.25,
+    26.1125
+   ],
+   "total": 68.8
+  },
+  {
+   "attendees": 3000,
+   "rate": "1 Hz",
+   "peak_gpus": 385,
+   "gpu_hours": 896.0,
+   "cost": [
+    82.875,
+    1.25,
+    50.275
+   ],
+   "total": 134.4
+  },
+  {
+   "attendees": 3000,
+   "rate": "2 Hz",
+   "peak_gpus": 751,
+   "gpu_hours": 1776.7,
+   "cost": [
+    165.75,
+    1.25,
+    99.5
+   ],
+   "total": 266.5
+  },
+  {
+   "attendees": 10000,
+   "rate": "Adaptive (0.19 q/s)",
+   "peak_gpus": 297,
+   "gpu_hours": 610.7,
+   "cost": [
+    52.487500000000004,
+    4.166666666666664,
+    34.945833333333326
+   ],
+   "total": 91.6
+  },
+  {
+   "attendees": 10000,
+   "rate": "0.5 Hz",
+   "peak_gpus": 674,
+   "gpu_hours": 1516.0,
+   "cost": [
+    138.125,
+    4.166666666666669,
+    85.10833333333332
+   ],
+   "total": 227.4
+  },
+  {
+   "attendees": 10000,
+   "rate": "1 Hz",
+   "peak_gpus": 1284,
+   "gpu_hours": 2982.0,
+   "cost": [
+    276.25,
+    4.166666666666657,
+    166.88333333333335
+   ],
+   "total": 447.3
+  },
+  {
+   "attendees": 10000,
+   "rate": "2 Hz",
+   "peak_gpus": 2503,
+   "gpu_hours": 5904.7,
+   "cost": [
+    552.5,
+    4.1666666666666865,
+    329.03333333333336
+   ],
+   "total": 885.7
+  }
+ ],
+ "uses": [
+  "Tracking queries",
+  "Place search at app start (<5%)",
+  "Autoscaling headroom + idle GPUs"
+ ],
+ "price_per_gpu_hour": 0.15,
+ "gpu_qps": 8.0
+}

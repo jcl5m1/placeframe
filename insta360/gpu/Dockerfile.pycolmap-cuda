@@ -1,0 +1,91 @@
+# pycolmap 3.13.0 built with CUDA: GPU bundle adjustment through Ceres (dense CUDA + cuDSS sparse solver).
+# The stock PyPI wheel is CPU-only. Output: a CPython 3.13 wheel that uses the NVIDIA pip packages
+# (cuda-runtime, cublas, cusparse, cusolver, curand, nvjitlink, cudss) installed next to PyTorch, via RPATH.
+#
+#   docker build -f gpu/Dockerfile.pycolmap-cuda --output type=local,dest=gpu/dist gpu/
+#
+# Pinned: base image digest, Ceres commit (master: first with cuDSS >= 1.0 support, reports 2.3.0),
+# COLMAP 3.13.0 tag commit, and every pip tool version.
+FROM nvidia/cuda@sha256:a99a1860ba8e2916e5c3e73b72ec4c4301653a84586e05bfc9a2aa2d58027e97 AS builder
+# nvidia/cuda:12.8.1-devel-ubuntu22.04 (glibc 2.35; the reconstructor runs Debian 12 with glibc 2.36)
+
+ARG CERES_COMMIT=e831bfef06ebd7a8daac7d76a1ca8bd33b47fa72
+ARG COLMAP_COMMIT=0b31f98133b470eae62811b557dc2bcff1e4f9a5
+ARG CUDA_ARCHS="80;86;89"
+ARG PYTHON_VERSION=3.13.11
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git ca-certificates curl unzip build-essential ninja-build pkg-config python3-pip \
+      libeigen3-dev libgoogle-glog-dev libgflags-dev libmetis-dev libsuitesparse-dev libopenblas-dev liblapack-dev \
+      libboost-program-options-dev libboost-graph-dev libboost-system-dev libfreeimage-dev libsqlite3-dev \
+      libcurl4-openssl-dev libssl-dev patchelf libgl1-mesa-dev libglew-dev \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip3 install --no-cache-dir uv==0.13.8 cmake==3.31.6
+
+# cuDSS 1.0 from NVIDIA's pip wheel (the apt repo only has 0.8 for CUDA 12). The wheel has no CMake package
+# config, so provide the small one Ceres' find_package(cudss 1.0.0 NO_MODULE) needs.
+COPY .cudss.whl /tmp/cudss.whl
+RUN mkdir -p /opt/cudss && cd /opt/cudss && unzip -q /tmp/cudss.whl 'nvidia/cu12/*' && mv nvidia/cu12/* . \
+    && rm -rf nvidia /tmp/cudss.whl && ln -s libcudss.so.1 lib/libcudss.so && mkdir -p lib/cmake/cudss \
+    && printf '%s\n' \
+       'set(cudss_VERSION 1.0.0)' \
+       'if(NOT TARGET cudss)' \
+       '  add_library(cudss SHARED IMPORTED)' \
+       '  set_target_properties(cudss PROPERTIES IMPORTED_LOCATION /opt/cudss/lib/libcudss.so.1' \
+       '    INTERFACE_INCLUDE_DIRECTORIES /opt/cudss/include)' \
+       'endif()' \
+       'set(cudss_FOUND TRUE)' > lib/cmake/cudss/cudss-config.cmake \
+    && printf '%s\n' \
+       'set(PACKAGE_VERSION 1.0.0)' \
+       'if(PACKAGE_FIND_VERSION VERSION_GREATER PACKAGE_VERSION)' \
+       '  set(PACKAGE_VERSION_COMPATIBLE FALSE)' \
+       'else()' \
+       '  set(PACKAGE_VERSION_COMPATIBLE TRUE)' \
+       'endif()' > lib/cmake/cudss/cudss-config-version.cmake
+
+# Ceres master needs Abseil >= 20240116 (Ubuntu 22.04 ships 2021): build its pinned in-tree submodule.
+RUN git clone https://github.com/ceres-solver/ceres-solver.git /src/ceres && cd /src/ceres && git checkout ${CERES_COMMIT} \
+    && git submodule update --init --depth 1 third_party/abseil-cpp \
+    && cmake -S . -B build -GNinja -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DWITH_CUDA=default \
+       -DCMAKE_CUDA_ARCHITECTURES="${CUDA_ARCHS}" -Dcudss_DIR=/opt/cudss/lib/cmake/cudss \
+       -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF \
+    && cmake --build build && cmake --install build
+# Separate step so a failed check never discards the 20-minute compile from the build cache. config.h keeps a
+# commented "// #define CERES_NO_..." line for enabled features, so only an uncommented define means "off".
+RUN if grep -Eq "^#define CERES_NO_CUDSS" /usr/local/include/ceres/internal/config.h; then echo "cuDSS NOT enabled"; exit 1; fi \
+    && if grep -Eq "^#define CERES_NO_CUDA" /usr/local/include/ceres/internal/config.h; then echo "CUDA NOT enabled"; exit 1; fi \
+    && grep -E "CERES_NO_(CUDA|CUDSS)" /usr/local/include/ceres/internal/config.h
+
+RUN git clone https://github.com/colmap/colmap.git /src/colmap && cd /src/colmap && git checkout ${COLMAP_COMMIT} \
+    && cmake -S . -B build -GNinja -DCMAKE_BUILD_TYPE=Release -DCUDA_ENABLED=ON \
+       -DCMAKE_CUDA_ARCHITECTURES="${CUDA_ARCHS}" -DGUI_ENABLED=OFF -DOPENGL_ENABLED=OFF -DCGAL_ENABLED=OFF \
+       -DTESTS_ENABLED=OFF -DCCACHE_ENABLED=OFF \
+    && cmake --build build && cmake --install build
+
+RUN uv python install ${PYTHON_VERSION} && uv venv -p ${PYTHON_VERSION} /opt/build-venv \
+    && VIRTUAL_ENV=/opt/build-venv uv pip install scikit-build-core==1.1.2 pybind11==3.0.1 numpy==2.3.4 \
+       auditwheel==6.8.2 wheel==0.48.0 \
+    && cd /src/colmap && VIRTUAL_ENV=/opt/build-venv /opt/build-venv/bin/python -m pip --version >/dev/null 2>&1 \
+       || VIRTUAL_ENV=/opt/build-venv uv pip install pip==25.3 \
+    && /opt/build-venv/bin/python -m pip wheel . --no-deps --no-build-isolation -w /dist/raw \
+       -C cmake.define.GENERATE_STUBS=OFF -C cmake.define.CMAKE_CUDA_ARCHITECTURES="${CUDA_ARCHS}"
+
+# Bundle the non-CUDA shared libraries (Ceres, glog, BLAS, ...). The OpenGL loader (libGL/GLX/GLdispatch, pulled
+# in via GLEW) must come from the system: a bundled libGLdispatch next to the system libGLX crashes at load. CUDA libraries stay external: they come from
+# the NVIDIA pip packages in the target venv, found through an RPATH relative to the installed package.
+# auditwheel needs patchelf >= 0.14.5 (Ubuntu 22.04 ships 0.14.3): use the pinned pip build, first on PATH.
+RUN VIRTUAL_ENV=/opt/build-venv uv pip install patchelf==0.17.2.2
+RUN export PATH=/opt/build-venv/bin:$PATH && LD_LIBRARY_PATH=/usr/local/lib:/opt/cudss/lib auditwheel repair /dist/raw/pycolmap-*.whl \
+       --plat manylinux_2_35_x86_64 -w /dist/repaired \
+       --exclude 'libcuda.so.1' --exclude 'libcudart.so.12' --exclude 'libcublas.so.12' --exclude 'libcublasLt.so.12' \
+       --exclude 'libcusparse.so.12' --exclude 'libcusolver.so.11' --exclude 'libcurand.so.10' \
+       --exclude 'libnvJitLink.so.12' --exclude 'libcudss.so.1' \
+       --exclude 'libGLX.so.0' --exclude 'libGLdispatch.so.0' --exclude 'libGL.so.1' \
+    && cd /dist/repaired && /opt/build-venv/bin/python -m wheel unpack pycolmap-*.whl -d unpacked \
+    && for so in $(find unpacked -name '*.so*' -type f); do \
+         patchelf --add-rpath '$ORIGIN/../nvidia/cuda_runtime/lib:$ORIGIN/../nvidia/cublas/lib:$ORIGIN/../nvidia/cusparse/lib:$ORIGIN/../nvidia/cusolver/lib:$ORIGIN/../nvidia/curand/lib:$ORIGIN/../nvidia/nvjitlink/lib:$ORIGIN/../nvidia/cu12/lib:$ORIGIN/../../nvidia/cuda_runtime/lib:$ORIGIN/../../nvidia/cublas/lib:$ORIGIN/../../nvidia/cusparse/lib:$ORIGIN/../../nvidia/cusolver/lib:$ORIGIN/../../nvidia/curand/lib:$ORIGIN/../../nvidia/nvjitlink/lib:$ORIGIN/../../nvidia/cu12/lib' "$so"; done \
+    && mkdir -p /dist/final && /opt/build-venv/bin/python -m wheel pack unpacked/pycolmap-* -d /dist/final
+
+FROM scratch AS out
+COPY --from=builder /dist/final/ /

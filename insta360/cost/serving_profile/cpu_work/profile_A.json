@@ -1,0 +1,56 @@
+{
+  "host": {
+    "cpu": "11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz",
+    "cpus_available": 16,
+    "gpu": "NVIDIA GeForce RTX 3090"
+  },
+  "frames_per_session": 50,
+  "track_workers_per_process": 2,
+  "runs": [
+    {
+      "threads": "default",
+      "throughput": [
+        {
+          "processes": 1,
+          "sessions": 1,
+          "queries": 50,
+          "qps": 5.02,
+          "p50_ms": 198.0,
+          "p95_ms": 279.5,
+          "gpu_util_mean": 40.9,
+          "gpu_mem_max_MiB": 4346.0,
+          "cpu_busy_mean_pct": 54.0
+        },
+        {
+          "processes": 2,
+          "sessions": 8,
+          "queries": 400,
+          "qps": 10.05,
+          "p50_ms": 748.2,
+          "p95_ms": 1075.8,
+          "gpu_util_mean": 83.7,
+          "gpu_mem_max_MiB": 8993.0,
+          "cpu_busy_mean_pct": 73.1
+        }
+      ],
+      "profile": {
+        "frames": 50,
+        "mean_ms": 207.6,
+        "p50_ms": 205.7,
+        "stages_ms": {
+          "matching (LightGlue, GPU)": 45.0,
+          "descriptor decode, PQ (CPU)": 38.0,
+          "pose RANSAC + refine (CPU)": 36.8,
+          "global descriptors (GPU)": 29.2,
+          "release cached GPU memory": 20.3,
+          "local features (ALIKED, GPU)": 10.4,
+          "decode + resize (CPU)": 7.9,
+          "localization metrics (CPU)": 0.8,
+          "tracker update (CPU)": 0.6,
+          "query tiles (CPU)": 0.3,
+          "other (retrieval, transfers, 2D-3D correspondence loop)": 18.3
+        }
+      }
+    }
+  ]
+}

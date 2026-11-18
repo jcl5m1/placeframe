@@ -1,0 +1,17 @@
+{
+ "A": {
+  "shown": 285,
+  "within_0.5m": 277,
+  "wrong_over_1m": 6
+ },
+ "B": {
+  "shown": 285,
+  "within_0.5m": 277,
+  "wrong_over_1m": 6
+ },
+ "C": {
+  "shown": 285,
+  "within_0.5m": 277,
+  "wrong_over_1m": 6
+ }
+}

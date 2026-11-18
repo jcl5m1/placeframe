@@ -1,0 +1,51 @@
+{
+ "referenced_frames": 286,
+ "single map": {
+  "shown": 285,
+  "within_0.5m": 277,
+  "wrong_over_1m": 6,
+  "ms_mean": 394.3
+ },
+ "tiles, routed": {
+  "shown": 285,
+  "within_0.5m": 278,
+  "wrong_over_1m": 5,
+  "ms_mean": 183.3
+ },
+ "tiled": {
+  "frames_per_tile": {
+   "tile_01": 113,
+   "tile_00": 173
+  },
+  "tiles_queried": {
+   "1": 285,
+   "2": 1
+  },
+  "switches": 8,
+  "switch_frames": [
+   25,
+   71,
+   94,
+   109,
+   137,
+   236,
+   247,
+   260
+  ],
+  "served_pose_jump_at_switch_m": [
+   0.018,
+   0.025,
+   0.014,
+   0.006,
+   0.01,
+   0.022,
+   0.014,
+   0.007
+  ],
+  "error_near_switches_m": {
+   "n": 88,
+   "median": 0.244,
+   "max": 0.534
+  }
+ }
+}

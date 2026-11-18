@@ -1,0 +1,78 @@
+{
+  "host": {
+    "cpu": "11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz",
+    "cpus_available": 16,
+    "gpu": "NVIDIA GeForce RTX 3090"
+  },
+  "frames_per_session": 50,
+  "track_workers_per_process": 2,
+  "runs": [
+    {
+      "threads": "default",
+      "throughput": [
+        {
+          "processes": 1,
+          "sessions": 1,
+          "queries": 50,
+          "qps": 6.05,
+          "p50_ms": 162.4,
+          "p95_ms": 219.5,
+          "gpu_util_mean": 30.8,
+          "gpu_mem_max_MiB": 5598.0,
+          "cpu_busy_mean_pct": 62.4
+        },
+        {
+          "processes": 2,
+          "sessions": 8,
+          "queries": 400,
+          "qps": 11.15,
+          "p50_ms": 677.8,
+          "p95_ms": 1007.7,
+          "gpu_util_mean": 78.4,
+          "gpu_mem_max_MiB": 9121.0,
+          "cpu_busy_mean_pct": 84.7
+        },
+        {
+          "processes": 3,
+          "sessions": 12,
+          "queries": 600,
+          "qps": 12.25,
+          "p50_ms": 929.9,
+          "p95_ms": 1363.9,
+          "gpu_util_mean": 85.7,
+          "gpu_mem_max_MiB": 18176.0,
+          "cpu_busy_mean_pct": 91.8
+        },
+        {
+          "processes": 4,
+          "sessions": 16,
+          "queries": 800,
+          "qps": 12.67,
+          "p50_ms": 1198.2,
+          "p95_ms": 1713.4,
+          "gpu_util_mean": 89.4,
+          "gpu_mem_max_MiB": 17930.0,
+          "cpu_busy_mean_pct": 92.9
+        }
+      ],
+      "profile": {
+        "frames": 50,
+        "mean_ms": 162.1,
+        "p50_ms": 152.5,
+        "stages_ms": {
+          "matching (LightGlue, GPU)": 45.8,
+          "pose RANSAC + refine (CPU)": 38.9,
+          "global descriptors (GPU)": 27.3,
+          "descriptor decode, PQ (CPU)": 11.0,
+          "local features (ALIKED, GPU)": 10.3,
+          "decode + resize (CPU)": 8.3,
+          "localization metrics (CPU)": 0.8,
+          "tracker update (CPU)": 0.6,
+          "query tiles (CPU)": 0.3,
+          "release cached GPU memory": 0.1,
+          "other (retrieval, transfers, 2D-3D correspondence loop)": 18.7
+        }
+      }
+    }
+  ]
+}

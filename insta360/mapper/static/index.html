@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Placeframe · add recordings to a map</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --ink:#e7e9ee; --muted:#9aa1ad; --line:#272c36; --accent:#4cc2ff; --ok:#3ecf8e; --bad:#ff6b6b; --warn:#f5b84b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  main { max-width:920px; margin:0 auto; padding:28px 18px 60px; }
+  h1 { font-size:20px; margin:0 0 4px; } .sub { color:var(--muted); margin:0 0 22px; }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px 18px; margin-bottom:16px; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:0 0 12px; font-weight:600; }
+  label { display:block; color:var(--muted); font-size:12px; margin:10px 0 4px; }
+  input[type=text], input[type=password], select { width:100%; background:#0f1218; color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:8px 10px; font:inherit; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; } .row > * { flex:1; min-width:200px; }
+  button { background:var(--accent); color:#04121c; border:0; border-radius:6px; padding:8px 14px; font:inherit; font-weight:600; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--ink); border:1px solid var(--line); font-weight:500; }
+  button:disabled { opacity:.5; cursor:default; }
+  .drop { border:2px dashed var(--line); border-radius:10px; padding:26px; text-align:center; color:var(--muted); cursor:pointer; margin-top:12px; }
+  .drop.over { border-color:var(--accent); color:var(--ink); }
+  .item { border-top:1px solid var(--line); padding:12px 0; } .item:first-child { border-top:0; }
+  .item .top, #alerts > .top { display:flex; justify-content:space-between; gap:10px; align-items:baseline; }
+  .item .acts { display:flex; gap:6px; flex:none; }
+  table.rent { width:100%; border-collapse:collapse; font-size:13px; margin-top:10px; }
+  table.rent th { text-align:left; color:var(--muted); font-weight:500; font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:4px 6px; border-bottom:1px solid var(--line); }
+  table.rent td { padding:5px 6px; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; }
+  .name { font-weight:600; word-break:break-all; } .meta { color:var(--muted); font-size:12px; }
+  .bar { height:8px; background:#0f1218; border-radius:5px; overflow:hidden; margin:8px 0 4px; }
+  .bar > div { height:100%; background:var(--accent); width:0; transition:width .3s; }
+  .ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); }
+  .stages { display:flex; gap:4px; margin:8px 0; flex-wrap:wrap; }
+  .stage { font-size:11px; padding:3px 7px; border-radius:4px; background:#0f1218; color:var(--muted); border:1px solid var(--line); }
+  .stage.done { background:rgba(62,207,142,.15); color:var(--ok); border-color:rgba(62,207,142,.35); }
+  .stage.cur { background:rgba(76,194,255,.15); color:var(--accent); border-color:rgba(76,194,255,.45); }
+  details pre { background:#0b0d11; border:1px solid var(--line); border-radius:6px; padding:10px; max-height:300px; overflow:auto; font-size:11.5px; white-space:pre-wrap; }
+  .hint { color:var(--muted); font-size:12px; margin-top:8px; }
+  .hidden { display:none; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+  .tile { background:#0f1218; border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
+  .tile .k { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.05em; }
+  .tile .v { font-size:20px; font-weight:600; margin:2px 0; font-variant-numeric:tabular-nums; }
+  .tile .s { color:var(--muted); font-size:11px; }
+  .tile svg { display:block; width:100%; height:26px; margin-top:4px; }
+  .tile.bad { border-color:#d9534f; background:#2a1416; } .tile.bad .v { color:#ff6b6b; } .tile.bad .s { color:#f0b4b4; }
+  .task { border-top:1px solid var(--line); padding:10px 0; } .task:first-child { border-top:0; }
+  .task .top { display:flex; justify-content:space-between; gap:10px; align-items:baseline; }
+  .task .nums { color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; }
+  .pill { font-size:11px; padding:2px 7px; border-radius:10px; border:1px solid var(--line); color:var(--muted); }
+  .pill.run { color:var(--accent); border-color:rgba(76,194,255,.45); } .pill.ok { color:var(--ok); border-color:rgba(62,207,142,.35); }
+  .pill.wait { color:var(--warn); border-color:rgba(245,184,75,.4); }
+  .bar.thin { height:6px; }
+  .modes { display:flex; gap:18px; margin:4px 0 6px; } .modes label { display:flex; gap:6px; align-items:center; color:var(--ink); font-size:13px; margin:0; }
+  .light { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; vertical-align:-1px; background:#3a3f4a; }
+  .light.ok { background:var(--ok); box-shadow:0 0 6px var(--ok); } .light.none { background:#5b6270; }
+  .light.err { background:var(--bad); } .light.wait { background:var(--warn); animation:pulse 1s infinite alternate; }
+  @keyframes pulse { from { opacity:.35; } to { opacity:1; } }
+  .sdrow { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:7px 0; border-top:1px solid var(--line); }
+  .sdrow:first-child { border-top:0; }
+  .contents { background:#0f1218; border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin-top:12px; font-size:13px; }
+  .contents:empty { display:none; }
+  .contents ol { margin:6px 0 0; padding-left:20px; } .contents li { margin:3px 0; }
+  h2.ph { cursor:pointer; user-select:none; }
+  h2.ph::before { content:"\25BE"; display:inline-block; width:14px; transition:transform .15s; }
+  section.collapsed h2.ph::before { transform:rotate(-90deg); }
+  section.collapsed > :not(h2.ph) { display:none; }
+  section.collapsed h2.ph { margin-bottom:0; }
+</style>
+</head>
+<body>
+<main>
+  <div id="hdr"></div>
+  <h1>Add recordings to a map</h1>
+  <p class="sub">Upload raw Insta360 <code>.insv</code> recordings of a place that is already mapped. Each one is registered into the
+    map and a new, fused map is built. Uploads resume automatically — if the connection drops or you close the page,
+    pick the same file again and it continues where it stopped.</p>
+
+  <section id="alerts" class="hidden" style="border-color:var(--bad);background:rgba(255,107,107,.08)"></section>
+
+  <section id="loginBox">
+    <h2>Log in</h2>
+    <div class="row">
+      <div><label>Username</label><input id="u" type="text" value="user" autocomplete="username"></div>
+      <div><label>Password</label><input id="p" type="password" autocomplete="current-password"></div>
+    </div>
+    <div style="margin-top:12px"><button id="loginBtn">Log in</button> <span id="loginMsg" class="bad"></span></div>
+  </section>
+
+  <section id="uploadBox" class="hidden">
+    <h2 class="ph">New recordings</h2>
+    <div class="row">
+      <div><div class="modes">
+          <label><input type="radio" name="target" value="existing" checked> Add to an existing map</label>
+          <label><input type="radio" name="target" value="new"> Create a new map</label></div>
+        <div id="existingBox"><div id="mapPicker"></div><input type="hidden" id="map"></div>
+        <div id="newBox" class="hidden"><label>Folder for the new map (optional, e.g. <code>office/floor 2</code>)</label>
+          <input id="folder" type="text" list="folderList" placeholder="top level"><datalist id="folderList"></datalist>
+          <div class="hint">Uploading creates the new map right away (it appears in the map list as “building…”);
+            every recording uploaded to it is part of that map: the first to finish builds it, the others are merged in.</div></div></div></div>
+      <div><label id="nameLabel">Name for the updated map (optional)</label><input id="newName" type="text" placeholder="default: original map + N recordings (dates)"></div>
+    </div>
+    <div id="mapContents" class="contents"></div>
+    <div class="row">
+      <div><label>Odometry</label><select id="odometry">
+        <option value="openvio" selected>OpenVIO — native 360 dual-fisheye model (default)</option>
+        <option value="openvins">OpenVINS — two fisheye cameras (experimental)</option>
+      </select></div>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;color:var(--ink);margin-top:12px">
+      <input type="checkbox" id="replace" checked> Make the updated map the active one (the old map is kept, just deactivated)</label>
+    <div class="drop" id="drop">Drop <b>.insv</b> files here or click to choose<input id="file" type="file" accept=".insv" multiple class="hidden"></div>
+    <div style="margin-top:10px"><button class="ghost" id="sdBtn">Check SD card…</button>
+      <span class="hint">choose the camera's folder (e.g. <code>DCIM/Camera01</code>) to see which recordings carry GPS</span>
+      <input id="sdDir" type="file" webkitdirectory multiple class="hidden"></div>
+    <div id="sdList" class="contents"></div>
+    <div class="hint">Tip: start and end the new recording in an area the map already covers, so it can be placed in the map.
+      For GPS, record from the Insta360 phone app with its GPS switch on (see GPS.md).</div>
+    <div id="uploads" style="margin-top:8px"></div>
+  </section>
+
+  <section id="computeBox" class="hidden">
+    <h2 class="ph">Compute <span class="meta" id="computeAge" style="text-transform:none;letter-spacing:0;font-weight:400"></span></h2>
+    <div class="tiles" id="tiles"></div>
+    <h2 style="margin-top:16px">Queue</h2>
+    <div id="tasks"><div class="meta">Loading…</div></div>
+  </section>
+
+  <section id="rentBox" class="hidden">
+    <h2 class="ph">Rented GPUs <span class="meta" id="rentAge" style="text-transform:none;letter-spacing:0;font-weight:400"></span></h2>
+    <div class="tiles" id="rentTiles"></div>
+    <div id="rentRunning"></div>
+    <h2 style="margin-top:16px">Recent rentals (fleet broker)</h2>
+    <div id="rentRecent"><div class="meta">Loading…</div></div>
+  </section>
+
+  <section id="jobsBox" class="hidden">
+    <h2 class="ph">Processing</h2>
+    <div id="jobs"><div class="meta">No jobs yet.</div></div>
+  </section>
+</main>
+<script src="pf_ui.js"></script>
+<script>
+const CHUNK = 16 * 1024 * 1024;
+const $ = id => document.getElementById(id);
+let token = sessionStorage.getItem('pf_token') || '';
+const uploads = new Map();   // key -> state
+
+async function api(path, opts = {}) {
+  const r = await fetch('api/' + path, { ...opts, headers: { ...(opts.headers || {}), Authorization: 'Bearer ' + token } });
+  if (r.status === 401) { showLogin('Session expired — log in again.'); throw new Error('auth'); }
+  return r;
+}
+function showLogin(msg) {
+  $('loginBox').classList.remove('hidden'); $('uploadBox').classList.add('hidden'); $('jobsBox').classList.add('hidden'); $('computeBox').classList.add('hidden'); $('rentBox').classList.add('hidden');
+  $('loginMsg').textContent = msg || '';
+}
+async function afterLogin() {
+  $('loginBox').classList.add('hidden'); $('uploadBox').classList.remove('hidden'); $('jobsBox').classList.remove('hidden'); $('computeBox').classList.remove('hidden'); $('rentBox').classList.remove('hidden');
+  pollStatus(); pollRentals();
+  await loadMaps();
+  pollJobs();
+}
+$('loginBtn').onclick = async () => {
+  $('loginMsg').textContent = '';
+  const r = await fetch('api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: $('u').value, password: $('p').value }) });
+  if (!r.ok) { $('loginMsg').textContent = 'Wrong username or password.'; return; }
+  token = (await r.json()).token; sessionStorage.setItem('pf_token', token); afterLogin();
+};
+$('p').addEventListener('keydown', e => { if (e.key === 'Enter') $('loginBtn').click(); });
+
+// ---------------------------------------------------------------- what the selected map contains
+$('map').addEventListener('change', () => { localStorage.setItem('pf_map', $('map').value); showContents(); });
+
+// ---------------------------------------------------------------- map picker: folders as a collapsible tree
+let allMaps = [], picker = null;
+async function loadMaps() {
+  allMaps = await (await api('maps')).json();
+  const saved = localStorage.getItem('pf_map');
+  const built = saved && saved.startsWith('group:') && allMaps.filter(m => !m.pending && m.group === saved.slice(6))
+    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))[0];
+  const pick = built || allMaps.find(m => m.id === saved) || allMaps.find(m => m.active) || allMaps[0];
+  $('folderList').innerHTML = [...new Set(allMaps.map(m => m.folder).filter(Boolean))].sort().map(f => `<option value="${esc(f)}">`).join('');
+  picker ??= PfUI.mapPicker($('mapPicker'), { onSelect: id => { $('map').value = id; $('map').dispatchEvent(new Event('change')); } });
+  picker.setItems(allMaps.map(m => ({ id: m.id, name: m.name, folder: m.folder, active: m.active, created: m.created_at || '', meta: mapMeta(m) })));
+  selectMap(pick ? pick.id : '');
+}
+function mapMeta(m) {
+  if (m.pending) return `building… · ${m.recordings} recording${m.recordings === 1 ? '' : 's'}`;
+  const what = m.recordings ? `${esc(m.base_name)} + ${m.recordings} recording${m.recordings > 1 ? 's' : ''}` : 'original capture';
+  const when = m.created_at ? ' · ' + new Date(m.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '';
+  return `${what}${when}${m.active ? '' : ' · inactive'}`;
+}
+function selectMap(id) {
+  picker.select(id, false);
+  $('map').value = id;
+  $('map').dispatchEvent(new Event('change'));
+}
+PfUI.header($('hdr'), 'dashboard', { title: 'Mapper' });
+const newMapMode = () => document.querySelector('input[name=target]:checked').value === 'new';
+document.querySelectorAll('input[name=target]').forEach(r => r.onchange = () => {
+  const isNew = newMapMode();
+  $('existingBox').classList.toggle('hidden', isNew); $('newBox').classList.toggle('hidden', !isNew);
+  $('mapContents').classList.toggle('hidden', isNew);
+  $('nameLabel').textContent = isNew ? 'Name for the new map (optional)' : 'Name for the updated map (optional)';
+  $('newName').placeholder = isNew ? 'default: X5 recording <date>' : 'default: original map + N recordings (dates)';
+  $('replace').closest('label').classList.toggle('hidden', isNew);
+});
+// Starting an upload with "Create a new map" creates the map at once (pending until its first recording is built),
+// selects it, and switches back to adding to it, so every later upload of this session goes into the same map.
+let creatingMap = null;
+function ensureTarget() {
+  if (!newMapMode()) return Promise.resolve($('map').value);
+  creatingMap ??= (async () => {
+    const leaf = $('folder').value.trim().split('/').filter(Boolean).pop();
+    const name = $('newName').value.trim() || `${leaf || 'New map'} ${new Date().toISOString().slice(0, 10)}`;
+    const r = await api('new-maps', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, folder: $('folder').value.trim() }) });
+    if (!r.ok) throw new Error('could not create the new map');
+    const m = await r.json();
+    await loadMaps(); selectMap(m.id);
+    const existing = document.querySelector('input[name=target][value=existing]');
+    existing.checked = true; existing.dispatchEvent(new Event('change'));
+    $('newName').value = '';
+    return m.id;
+  })().finally(() => { creatingMap = null; });
+  return creatingMap;
+}
+async function moveToFolder(id) {
+  const m = allMaps.find(x => x.id === id);
+  const folder = prompt('Folder for "' + (m ? m.name : id) + '" (use / for subfolders; empty = top level)', m ? m.folder : '');
+  if (folder === null) return;
+  await api('maps/' + id + '/folder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ folder }) });
+  await loadMaps();
+}
+async function showContents() {
+  const id = $('map').value, box = $('mapContents');
+  if (!id) { box.innerHTML = ''; return; }
+  box.innerHTML = '<span class="meta">Loading map contents…</span>';
+  const c = await (await api(`maps/${id}/contents`)).json();
+  if ($('map').value !== id) return;  // selection changed while loading
+  const b = c.base, day = t => t ? new Date(t).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '';
+  const base = `<b>Original capture:</b> ${esc(b.capture_name || b.map_name || b.map_id.slice(0, 8))}`
+    + (b.captured_at ? ` <span class="meta">(uploaded ${day(b.captured_at)})</span>` : '')
+    + (b.map_name && b.map_id !== id ? ` <span class="meta">· map "${esc(b.map_name)}"</span>` : '');
+  const rec = r => `${esc(r.filename)} <span class="meta">· recorded ${r.recorded || '?'} · uploaded ${day(r.uploaded * 1000)}`
+    + `${r.produced_name ? ` · made map "${esc(r.produced_name)}"` : ''}</span>`;
+  const added = c.recordings.length
+    ? `<div style="margin-top:8px"><b>Recordings added (${c.recordings.length}):</b><ol>${c.recordings.map(r => `<li>${rec(r)}</li>`).join('')}</ol></div>`
+    : '<div class="meta" style="margin-top:6px">No recordings have been added to this map yet.</div>';
+  const pend = c.pending.length
+    ? `<div style="margin-top:8px"><b>Being added to this map:</b><ol>${c.pending.map(r =>
+        `<li>${rec(r)} <span class="${r.state === 'failed' ? 'bad' : 'warn'}">${r.state}</span></li>`).join('')}</ol></div>` : '';
+  const cur = allMaps.find(m => m.id === id);
+  const folderLine = `<div class="meta" style="margin-bottom:6px">Folder: ${cur && cur.folder ? esc(cur.folder) : 'top level'}
+    <button class="ghost" id="moveBtn" style="padding:2px 8px;margin-left:6px">Move…</button></div>`;
+  box.innerHTML = folderLine + base + added + pend;
+  $('moveBtn').onclick = () => moveToFolder(id);
+}
+
+// ---------------------------------------------------------------- collapsible panels (state kept in localStorage)
+const collapsed = JSON.parse(localStorage.getItem('pf_collapsed') || '{}');
+document.querySelectorAll('section h2.ph').forEach(h => {
+  const sec = h.parentElement;
+  sec.classList.toggle('collapsed', !!collapsed[sec.id]);
+  h.addEventListener('click', e => {
+    if (e.target.closest('button, a, input, select')) return;
+    collapsed[sec.id] = sec.classList.toggle('collapsed');
+    localStorage.setItem('pf_collapsed', JSON.stringify(collapsed));
+  });
+});
+
+// ---------------------------------------------------------------- uploads
+$('drop').onclick = () => $('file').click();
+$('file').onchange = e => { [...e.target.files].forEach(startUpload); e.target.value = ''; };
+['dragover', 'dragenter'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.add('over'); }));
+['dragleave', 'drop'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.remove('over'); }));
+$('drop').addEventListener('drop', e => [...e.dataTransfer.files].forEach(startUpload));
+
+function startUpload(file) {
+  if (!file.name.toLowerCase().endsWith('.insv')) { alert(file.name + ': please upload the raw .insv recording'); return; }
+  const key = file.name + '|' + file.size + '|' + file.lastModified;
+  if (uploads.has(key) && (uploads.get(key).running || uploads.get(key).done)) return;
+  if (!file._server) { refreshServerStatus([file]).then(() => file._server && startUpload(file)); return; }
+  const prior = file._server.status;
+  if (prior === 'uploading') { alert(file.name + ' is already being uploaded (from this or another browser).'); return; }
+  if (prior === 'uploaded' && !confirm(file.name + ' was already uploaded. Upload it again as a new job?')) return;
+  const st = { key, file, target: null, offset: 0, paused: false, running: false, el: null, id: null, t0: 0, b0: 0, retries: 0 };
+  uploads.set(key, st); render(st);
+  ensureTarget().then(target => { st.target = target; run(st); }).catch(e => { st.error = e.message; render(st); });
+  inspect(file).then(() => render(st));
+}
+
+// ---------------------------------------------------------------- GPS check before upload
+// Insta360 keeps its metadata (GPS included) in a trailer at the end of the .insv: the server only needs the first
+// few MB and that trailer, so a recording is checked in seconds without uploading it.
+const HEAD_BYTES = 4 * 1024 * 1024, MAGIC = '8db42d694ccc418790edff439fe026bf';
+const inspections = new Map();   // file key -> promise of the server's answer
+let inspectChain = Promise.resolve();
+const fileKey = f => f.name + '|' + f.size + '|' + f.lastModified;
+function inspect(file) {
+  const k = fileKey(file);
+  if (!inspections.has(k)) {
+    const job = inspectChain.then(() => inspectNow(file)).catch(e => ({ ok: false, error: String(e.message || e) }));
+    inspectChain = job.then(() => {});   // one at a time: each sends ~20-40 MB
+    inspections.set(k, job);
+    job.then(r => { inspections.set(k, Promise.resolve(r)); file._gps = r; });
+  }
+  return inspections.get(k);
+}
+async function inspectNow(file) {
+  const end = new Uint8Array(await file.slice(Math.max(0, file.size - 40)).arrayBuffer());
+  if (end.length < 40 || new TextDecoder().decode(end.slice(8)) !== MAGIC) return { ok: false, error: 'no Insta360 metadata trailer' };
+  const extra = new DataView(end.buffer).getUint32(0, true);
+  const head = Math.min(HEAD_BYTES, file.size), tailStart = Math.max(head, file.size - extra - 4096);
+  const body = new Blob([file.slice(0, head), file.slice(tailStart)]);
+  const r = await api('inspect', { method: 'POST', body,
+    headers: { 'Content-Type': 'application/octet-stream', 'X-File-Size': String(file.size), 'X-Head-Len': String(head) } });
+  if (!r.ok) return { ok: false, error: (await r.json().catch(() => ({}))).detail || r.statusText };
+  return r.json();
+}
+function gpsLight(file) {
+  const r = file._gps;
+  if (!r) return '<span class="light wait" title="checking for GPS…"></span>';
+  if (!r.ok) return `<span class="light err" title="${esc(r.error || 'check failed')}"></span>`;
+  if (r.gps_fixes) return `<span class="light ok" title="GPS: ${r.gps_fixes} fixes, ${r.gps.lat.toFixed(5)}, ${r.gps.lon.toFixed(5)}"></span>`;
+  return '<span class="light none" title="no GPS in this recording"></span>';
+}
+function gpsText(file) {
+  const r = file._gps;
+  if (!r) return '<span class="meta">checking…</span>';
+  if (!r.ok) return `<span class="bad">${esc(r.error || 'check failed')}</span>`;
+  if (r.gps_fixes) return `<span class="ok">GPS · ${r.gps_fixes} fixes · ${r.gps.lat.toFixed(5)}, ${r.gps.lon.toFixed(5)}</span>`;
+  return '<span class="meta">no GPS</span>';
+}
+$('sdBtn').onclick = () => $('sdDir').click();
+$('sdDir').onchange = async e => {
+  const files = [...e.target.files].filter(f => f.name.toLowerCase().endsWith('.insv') && !f.name.startsWith('.'))
+    .sort((a, b) => b.name.localeCompare(a.name));
+  e.target.value = '';
+  const list = $('sdList');
+  if (!files.length) { list.innerHTML = '<span class="meta">No .insv recordings in that folder.</span>'; return; }
+  list.innerHTML = `<span class="meta">Checking ${files.length} recording(s) against what was already uploaded…</span>`;
+  await refreshServerStatus(files);
+  const draw = () => {
+    const todo = files.filter(needsUpload);
+    const withGps = files.filter(f => f._gps && f._gps.gps_fixes).length;
+    const counts = {};
+    files.forEach(f => { const k = uploadState(f).label; counts[k] = (counts[k] || 0) + 1; });
+    list.innerHTML = `<div class="top" style="margin-bottom:6px"><span class="meta">${files.length} recording(s): `
+      + Object.entries(counts).map(([k, n]) => `${n} ${k}`).join(' · ') + ` · ${withGps} with GPS</span>
+      <button id="uploadNew"${todo.length ? '' : ' disabled'}>Upload ${todo.length} new</button></div>`
+      + files.map((f, i) => {
+        const st = uploadState(f);
+        return `<div class="sdrow"><span>${gpsLight(f)}<span class="name">${esc(f.name)}</span>
+          <span class="meta"> · ${mb(f.size)} · ${new Date(f.lastModified).toLocaleString()}</span><br>
+          <span class="${st.cls}">${esc(st.text)}</span> · ${gpsText(f)}</span>
+          ${needsUpload(f) ? `<button class="ghost" data-i="${i}">${st.label === 'paused' ? 'Resume' : 'Upload'}</button>` : ''}</div>`;
+      }).join('');
+    list.querySelectorAll('button[data-i]').forEach(b => b.onclick = () => { startUpload(files[+b.dataset.i]); draw(); });
+    $('uploadNew').onclick = () => { files.filter(needsUpload).forEach(f => startUpload(f)); draw(); };
+  };
+  draw();
+  // GPS is only checked for recordings that still need uploading (each check sends ~20-40 MB).
+  files.filter(needsUpload).forEach(f => inspect(f).then(draw));
+};
+
+// What the server (and this page) already has of a recording: skip what is uploaded or being uploaded.
+async function refreshServerStatus(files) {
+  const r = await api('uploads/check', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files: files.map(f => ({ name: f.name, size: f.size })) }) });
+  if (!r.ok) { files.forEach(f => { f._server ??= { status: 'new' }; }); return; }  // unknown: treat as new
+  const byKey = new Map((await r.json()).map(x => [x.name + '|' + x.size, x]));
+  files.forEach(f => { f._server = byKey.get(f.name + '|' + f.size) || { status: 'new' }; });
+}
+function queuedHere(f) {
+  const st = uploads.get(fileKey(f));
+  return st && (st.running || st.done);
+}
+function uploadState(f) {
+  const s = f._server || { status: 'new' };
+  if (queuedHere(f)) return { label: 'queued here', text: 'in this page’s upload list', cls: 'warn' };
+  if (s.status === 'uploaded') {
+    const what = s.job_state === 'succeeded' ? `done${s.map_name ? ' → ' + s.map_name : ''}` : (s.job_state || 'received');
+    return { label: 'uploaded', text: `already uploaded · ${what}`, cls: 'ok' };
+  }
+  if (s.status === 'uploading') return { label: 'uploading', text: `being uploaded now (${mb(s.offset)} received)`, cls: 'warn' };
+  if (s.status === 'paused') return { label: 'paused', text: `partly uploaded (${mb(s.offset)}), will resume`, cls: 'meta' };
+  return { label: 'new', text: 'not uploaded yet', cls: 'meta' };
+}
+const needsUpload = f => !queuedHere(f) && ['new', 'paused'].includes((f._server || { status: 'new' }).status);
+async function run(st) {
+  st.running = true; st.paused = false; render(st);
+  try {
+    if (!st.id) {
+      const r = await api('uploads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+        filename: st.file.name, size: st.file.size, last_modified: st.file.lastModified,
+        map_id: st.target, new_map: false, folder: $('folder').value.trim(),
+
+        new_name: $('newName').value.trim(), replace: $('replace').checked,
+        odometry: $('odometry').value }) });
+      if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+      const j = await r.json(); st.id = j.id; st.offset = j.offset; st.resumed = j.resumed && j.offset > 0;
+    }
+    st.t0 = performance.now(); st.b0 = st.offset;
+    while (st.offset < st.file.size && !st.paused) {
+      const blob = st.file.slice(st.offset, Math.min(st.offset + CHUNK, st.file.size));
+      const buf = await blob.arrayBuffer();
+      const sha = hex(await crypto.subtle.digest('SHA-256', buf));
+      let r;
+      try {
+        r = await api('uploads/' + st.id, { method: 'PATCH', body: buf,
+          headers: { 'Upload-Offset': String(st.offset), 'X-Chunk-SHA256': sha, 'Content-Type': 'application/octet-stream' } });
+      } catch (e) { if (e.message === 'auth') throw e; await backoff(st); continue; }
+      if (r.status === 409) { st.offset = (await r.json()).offset; continue; }      // server has a different offset: follow it
+      if (r.status === 422 || r.status >= 500) { await backoff(st); continue; }   // checksum / transient: resend
+      if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+      const j = await r.json(); st.offset = j.offset; st.retries = 0;
+      if (j.complete) { st.done = true; st.job = j.job_id; }
+      render(st);
+    }
+  } catch (e) { if (e.message !== 'auth') { st.error = e.message; } }
+  st.running = false; render(st); if (st.done) pollJobs();
+}
+async function backoff(st) {
+  st.retries++; st.note = `connection problem — retrying (${st.retries})`; render(st);
+  await new Promise(r => setTimeout(r, Math.min(30000, 1000 * 2 ** Math.min(st.retries, 5))));
+  try { const r = await api('uploads/' + st.id); if (r.ok) st.offset = (await r.json()).offset; } catch (_) {}
+  st.note = '';
+}
+function render(st) {
+  if (!st.el) { st.el = document.createElement('div'); st.el.className = 'item'; $('uploads').prepend(st.el); }
+  const pct = st.file.size ? 100 * st.offset / st.file.size : 0;
+  const secs = (performance.now() - st.t0) / 1000, rate = secs > 1 ? (st.offset - st.b0) / secs : 0;
+  const eta = rate > 0 ? (st.file.size - st.offset) / rate : 0;
+  const status = st.error ? `<span class="bad">${esc(st.error)}</span>`
+    : st.done ? `<span class="ok">uploaded — processing queued</span>`
+    : st.paused ? 'paused' : st.note ? `<span class="warn">${esc(st.note)}</span>`
+    : st.running ? `${mb(rate)}/s · ${fmtT(eta)} left${st.resumed ? ' · resumed' : ''}` : '';
+  st.el.innerHTML = `<div class="top"><span class="name">${gpsLight(st.file)}${esc(st.file.name)}</span>
+      <span class="meta">${mb(st.offset)} / ${mb(st.file.size)} (${pct.toFixed(1)}%)</span></div>
+    <div class="bar"><div style="width:${pct}%"></div></div>
+    <div class="top"><span class="meta">${status}</span><span>
+      ${!st.done && st.running ? '<button class="ghost" data-a="pause">Pause</button>' : ''}
+      ${!st.done && !st.running ? '<button class="ghost" data-a="resume">Resume</button>' : ''}</span></div>`;
+  st.el.querySelectorAll('button').forEach(b => b.onclick = () => {
+    if (b.dataset.a === 'pause') { st.paused = true; } else { st.error = null; run(st); }
+  });
+}
+
+// ---------------------------------------------------------------- jobs
+let jobTimer = null;
+async function pollJobs() {
+  clearTimeout(jobTimer);
+  try {
+    const jobs = await (await api('jobs')).json();
+    $('jobs').innerHTML = jobs.length ? jobs.map(jobHtml).join('') : '<div class="meta">No jobs yet.</div>';
+    $('jobs').querySelectorAll('button[data-retry]').forEach(b => b.onclick = async () => { await api('jobs/' + b.dataset.retry + '/retry', { method: 'POST' }); pollJobs(); });
+  } catch (_) {}
+  jobTimer = setTimeout(pollJobs, 5000);
+}
+function groupLine(j) {
+  if (!j.group) return '';
+  const target = j.map_id && allMaps.find(m => m.id === j.map_id);
+  const role = j.combined_into ? `merging into the group’s map${target ? ' “' + esc(target.name) + '”' : ''}`
+    : j.state === 'queued' ? 'builds the map if no recording of the group has yet, otherwise merges into it'
+    : 'builds the new map';
+  return `<div class="meta">New map group ${esc(j.group)}${j.folder ? ' · folder ' + esc(j.folder) : ''} · ${role}</div>`;
+}
+function jobHtml(j) {
+  const cls = { succeeded: 'ok', failed: 'bad', running: '', queued: 'meta' }[j.state] || '';
+  const stages = j.stages.map(s => `<span class="stage ${j.done.includes(s) ? 'done' : s === j.current ? 'cur' : ''}">${s}</span>`).join('');
+  const res = j.result ? `<div class="ok">New map <b>${esc(j.result.name)}</b> is live — ${j.result.registered_images}/${j.result.total_images} images, ${(j.result.points || 0).toLocaleString()} points${j.result.replaced ? '; old map deactivated' : ''}.</div>` : '';
+  return `<div class="item"><div class="top"><span class="name">${esc(j.filename)}</span>
+      <span class="meta ${cls}">${esc(j.odometry || 'openvio')} · ${j.state}${j.state === 'failed' ? ` · <button class="ghost" data-retry="${j.id}">Retry</button>` : ''}</span></div>
+    ${groupLine(j)}<div class="stages">${stages}</div>${j.held ? `<div class="warn">${esc(j.held)}</div>` : ''}${res}${j.error ? `<div class="bad">${esc(j.error)}</div>` : ''}
+    <details><summary class="meta">log</summary><pre>${esc(j.log.join('\n'))}</pre></details></div>`;
+}
+
+
+// ---------------------------------------------------------------- compute dashboard
+let statusTimer = null;
+let lastStatusOk = 0;
+// Rented GPUs: live Vast.ai instances (any on the account) with cost so far, credit left, and the broker's history.
+let rentTimer = null;
+const usd = v => v == null ? '—' : '$' + Number(v).toFixed(2);
+const ago = t => t ? dur(Date.now() / 1000 - t) : '—';
+async function pollRentals() {
+  clearTimeout(rentTimer);
+  try {
+    const r = await api('rentals');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    renderRentals(await r.json());
+  } catch (e) { $('rentAge').innerHTML = `<span class="warn">· unavailable (${esc(String(e))})</span>`; }
+  if (token) rentTimer = setTimeout(pollRentals, 30000);
+}
+function renderRentals(d) {
+  const a = d.account || {}, run = d.running || [], t = d.totals || {};
+  $('rentAge').innerHTML = d.error ? `<span class="warn">· Vast.ai not reachable (${esc(d.error)}); showing the broker's records</span>`
+                                   : '· updated ' + new Date(d.t * 1000).toLocaleTimeString();
+  $('rentTiles').innerHTML =
+    tile('Running now', String(run.length), run.length ? `${usd(d.burn_per_hour)}/h` : 'nothing rented', '', false) +
+    tile('Cost so far (running)', usd(run.reduce((s, r) => s + (r.cost || 0), 0)), 'at their current prices') +
+    tile('Fleet spend, 24 h', usd(t.day), `7 days ${usd(t.week)} · estimated from the broker`) +
+    tile('Vast.ai total spend', usd(a.total_spend), 'as billed') +
+    tile('Credit left', usd(a.credit), a.credit != null && a.credit < 5 ? 'top up soon' : '', '', a.credit != null && a.credit < 5);
+  $('rentRunning').innerHTML = !run.length ? '' : `<table class="rent"><tr><th>Instance</th><th>GPU</th><th>Where</th><th>Status</th><th>Price</th><th>Running</th><th>Cost so far</th><th>Label</th></tr>`
+    + run.map(r => `<tr><td>${esc(r.id)}</td><td>${esc(r.gpu)}</td><td>${esc(r.where || '')}</td><td>${esc(r.status || '')}</td>
+        <td>${usd(r.dph)}/h</td><td>${ago(r.since)}</td><td>${usd(r.cost)}</td><td class="meta">${esc(r.label)}</td></tr>`).join('') + '</table>';
+  const rec = d.recent || [];
+  $('rentRecent').innerHTML = !rec.length ? '<div class="meta">No rentals recorded.</div>'
+    : `<table class="rent"><tr><th>Started</th><th>Job</th><th>GPU</th><th>Where</th><th>Bid</th><th>Ran</th><th>Est. cost</th><th>Outcome</th></tr>`
+      + rec.map(r => `<tr><td>${r.launched ? new Date(r.launched * 1000).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : '—'}</td>
+          <td>${esc(r.job)}</td><td>${esc(r.gpu || '')}</td><td>${esc(r.where || '')}</td><td>${usd(r.bid)}/h</td>
+          <td>${r.ended ? dur(r.hours * 3600) : 'running'}</td><td>${usd(r.cost)}</td><td class="meta">${esc(r.job_status || '')}</td></tr>`).join('')
+      + `</table><div class="meta" style="margin-top:6px">${t.instances} instances in the broker's records, ${usd(t.all)} estimated in total (bid × running time + download charges).</div>`;
+}
+
+async function pollStatus() {
+  clearTimeout(statusTimer);
+  try {
+    const r = await api('status');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    renderStatus(await r.json());
+    lastStatusOk = Date.now();
+  } catch (e) {
+    // Never leave an old picture on screen as if it were live: say the data is stale and drop the build list,
+    // whose "in progress" entries may have finished long ago.
+    if (e.message !== 'auth' && lastStatusOk && Date.now() - lastStatusOk > 15000) {
+      $('computeAge').innerHTML = `<span class="warn">· can't reach the server since ${new Date(lastStatusOk).toLocaleTimeString()} — retrying</span>`;
+      $('tasks').innerHTML = '<div class="meta">Build status unavailable until the connection is back.</div>';
+    }
+  }
+  statusTimer = setTimeout(pollStatus, 4000);
+}
+// Browsers pause timers in background tabs and sleeping laptops: refresh as soon as the tab is visible again.
+document.addEventListener('visibilitychange', () => { if (!document.hidden && token) { pollStatus(); pollJobs(); pollRentals(); } });
+function spark(hist, key, max = 100) {
+  const pts = hist.map(h => h[key]).filter(v => v != null);
+  if (pts.length < 2) return '';
+  const w = 150, h = 26, n = pts.length;
+  const d = pts.map((v, i) => `${(i / (n - 1) * w).toFixed(1)},${(h - 2 - (Math.min(v, max) / max) * (h - 4)).toFixed(1)}`).join(' ');
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${d}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
+}
+function tile(k, v, s, svg, bad) { return `<div class="tile${bad ? ' bad' : ''}"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s || ''}</div>${svg || ''}</div>`; }
+const pct = v => v == null ? '—' : Math.round(v) + '%';
+const dur = s => s == null || !isFinite(s) ? '—' : s < 90 ? Math.round(s) + ' s' : s < 5400 ? Math.round(s / 60) + ' min' : (s / 3600).toFixed(1) + ' h';
+// A rate of 0 only means the counter has not moved recently (long optimisations report no progress);
+// whether the task is actually stuck comes from the server-side health check below.
+const rateTxt = r => r == null || r <= 0 ? '' : r >= 1 ? r.toFixed(1) + ' it/s' : (1 / r).toFixed(1) + ' s/it';
+function healthLine(h) {
+  if (!h) return '';
+  const quiet = h.idle_s != null && h.idle_s > 60 ? ` · no progress update for ${dur(h.idle_s)}` : '';
+  const cpu = h.cpu_cores != null ? ` · worker using ${h.cpu_cores} cores` : '';
+  const step = h.last_step ? ` · last step: ${esc(h.last_step)}${h.last_step_age_s != null ? ' (' + dur(h.last_step_age_s) + ' ago)' : ''}` : '';
+  if (h.state === 'stalled')
+    return `<div class="nums" style="margin-top:4px"><span class="pill wait">no activity</span> no progress, CPU and GPU idle and no log output${quiet}${step}. The watchdog checks this every 5 minutes and restarts a build that stays stuck.</div>`;
+  if (h.state === 'working')
+    return `<div class="nums" style="margin-top:4px"><span class="pill run">working</span>${quiet ? quiet.slice(3) + ' (normal during long optimisation steps)' : ''}${cpu}${step}</div>`;
+  return `<div class="nums" style="margin-top:4px"><span class="pill ok">progressing</span>${cpu}${step}</div>`;
+}
+function progressBlock(done, total, label, rate, eta, extra) {
+  const p = total ? 100 * done / total : 0;
+  return `<div class="bar thin"><div style="width:${p.toFixed(1)}%"></div></div>
+    <div class="top"><span class="nums">${esc(label || '')} · ${done.toLocaleString()}/${total.toLocaleString()} (${p.toFixed(1)}%)</span>
+    <span class="nums">${rateTxt(rate)}${eta != null ? ' · stage ETA ' + dur(eta) : ''}${extra || ''}</span></div>`;
+}
+// The clipboard API needs a secure page (https); elsewhere fall back to a hidden text field.
+function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+  const t = document.createElement('textarea');
+  t.value = text; t.style.position = 'fixed'; t.style.opacity = '0';
+  document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove();
+  return Promise.resolve();
+}
+
+// Problems the watchdog found and could not fix stay at the top of the page until someone dismisses them.
+function renderProblems(problems) {
+  const box = $('alerts');
+  box.classList.toggle('hidden', !problems.length || !token);
+  if (!problems.length) { box.innerHTML = ''; return; }
+  const sig = JSON.stringify(problems.map(p => [p.kind, p.summary, p.ts]));
+  if (box.dataset.sig === sig) return;  // don't redraw (and close open details) every 4 s
+  box.dataset.sig = sig;
+  box.innerHTML = `<div class="top"><h2 style="color:var(--bad)">⚠ ${problems.length} problem${problems.length > 1 ? 's' : ''} need${problems.length > 1 ? '' : 's'} attention</h2>`
+    + (problems.length > 1 ? `<button class="ghost" data-copy="all">Copy all</button>` : '') + `</div>`
+    + problems.map((p, i) => `<div class="item"><div class="top"><span><b>${esc(p.summary)}</b>
+        <span class="meta"> · ${esc(p.kind)} · since ${esc(p.ts.slice(5, 16))}</span></span>
+        <span class="acts"><button class="ghost" data-copy="${i}">Copy</button><button class="ghost" data-dismiss="${i}">Dismiss</button></span></div>
+        ${p.evidence ? `<details><summary class="meta">details</summary><pre>${esc(p.evidence)}</pre></details>` : ''}</div>`).join('');
+  // Copy a problem as plain text (summary, kind, time, evidence), e.g. to paste into a message to the agent.
+  const asText = p => `${p.summary}\n(${p.kind}, since ${p.ts})` + (p.evidence ? `\n\nDetails:\n${p.evidence}` : '');
+  box.querySelectorAll('button[data-copy]').forEach(b => b.onclick = () => {
+    const text = b.dataset.copy === 'all' ? problems.map(asText).join('\n\n---\n\n') : asText(problems[+b.dataset.copy]);
+    copyText(text).then(() => { const old = b.textContent; b.textContent = 'Copied'; setTimeout(() => b.textContent = old, 1500); });
+  });
+  box.querySelectorAll('button[data-dismiss]').forEach(b => b.onclick = async () => {
+    const p = problems[+b.dataset.dismiss];
+    await api('incidents/dismiss', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: p.kind, summary: p.summary }) });
+    box.dataset.sig = ''; pollStatus();
+  });
+}
+function renderStatus(s) {
+  const m = s.machine || {}, h = s.history || [], c = s.containers || {};
+  const rc = c['reconstructor-cuda'] || {};
+  const age = s.t ? (Date.now() / 1000 - s.t) : null;
+  $('computeAge').innerHTML = !s.t ? '' : (s.error || age > 60)
+    ? `<span class="warn">· live data unavailable since ${new Date(s.t * 1000).toLocaleTimeString()}${s.error ? ' (' + esc(s.error.slice(0, 80)) + ')' : ''} — showing machine stats only</span>`
+    : '· updated ' + new Date(s.t * 1000).toLocaleTimeString();
+  $('tiles').innerHTML =
+    (m.gpu_error
+      ? tile('GPU', 'unavailable', esc(m.gpu_error) + ' · localization and builds are stopped', '', true) +
+        tile('GPU memory', '—', 'GPU unavailable', '', true)
+      : tile('GPU load', pct(m.gpu_util_pct), `${(m.gpu_name || '').replace('NVIDIA GeForce ', '')} · ${m.gpu_power_w ?? '—'} W · ${m.gpu_temp_c ?? '—'}°C`, spark(h, 'gpu')) +
+        tile('GPU memory', m.gpu_mem_gb != null ? m.gpu_mem_gb.toFixed(1) + ' GB' : '—', `of ${m.gpu_mem_total_gb?.toFixed(0) ?? '—'} GB`, spark(h, 'gpu_mem'))) +
+    tile('CPU load', pct(m.cpu_pct), `${m.cpu_cores} threads · load ${m.load1 ?? '—'} · reconstructor ${rc.cpu_pct != null ? (rc.cpu_pct / 100).toFixed(1) + ' cores' : '—'}`, spark(h, 'cpu')) +
+    tile('RAM', m.ram_used_gb != null ? m.ram_used_gb + ' GB' : '—', `of ${m.ram_total_gb} GB · reconstructor ${rc.mem || '—'}`, spark(h, 'ram')) +
+    tile('Disk free', m.disk_free_gb != null ? m.disk_free_gb + ' GB' : '—', `${m.disk_pct}% used`, '');
+  const parts = [];
+  for (const j of (s.jobs || []).filter(j => j.state === 'running' || j.state === 'queued')) {
+    const idx = j.current ? j.stages.indexOf(j.current) + 1 : 0;
+    const cp = j.current_progress;
+    const after = j.after_stage_eta_s ? ` · then ~${dur(j.after_stage_eta_s)} local` : '';
+    parts.push(`<div class="task"><div class="top"><span class="name">Merge: ${esc(j.file)}</span>
+      <span class="pill ${j.state === 'running' ? 'run' : 'wait'}">${j.state === 'running' ? `stage ${idx}/${j.stages.length}: ${esc(j.current)}` : (s.hold ? 'held' : 'queued')}</span></div>
+      <div class="bar thin"><div style="width:${(100 * j.done.length / j.stages.length).toFixed(0)}%;background:var(--ok)"></div></div>
+      <div class="nums">${j.done.length}/${j.stages.length} stages done · recording ${dur(j.recording_s)} · running ${dur(j.elapsed_s)}</div>
+      ${cp ? progressBlock(cp.done, cp.total, cp.label, j.rate, j.stage_eta_s, after) : ''}${healthLine(j.health)}</div>`);
+  }
+  for (const r of (s.server || []).filter(r => r.active)) {
+    parts.push(`<div class="task"><div class="top"><span class="name">Server build: ${esc(r.name)}</span>
+      <span class="pill run">stage ${r.stage_index}/${r.stage_count}: ${esc(r.status)}</span></div>
+      ${r.total ? progressBlock(r.current ?? 0, r.total, r.status, r.rate, r.stage_eta_s, '') : ''}${healthLine(r.health)}</div>`);
+  }
+  const st = s.study;
+  if (st) {
+    const n = st.items.length, d = st.items.filter(i => i.state === 'done').length;
+    const list = st.items.map(i => `<span class="pill ${i.state === 'done' ? 'ok' : i.state === 'running' ? 'run' : ''}">${esc(i.variant)}${i.images ? ' · ' + i.images.toLocaleString() + ' img' : ''}${i.total_s ? ' · ' + dur(i.total_s) : ''}</span>`).join(' ');
+    parts.push(`<div class="task"><div class="top"><span class="name">Cost study (size variants)</span>
+      <span class="pill ${st.current ? 'run' : 'wait'}">${st.current ? 'building ' + esc(st.current.variant) : st.waiting_for_idle_server ? 'waiting for idle server' : d === n ? 'complete' : 'idle'}</span></div>
+      <div class="bar thin"><div style="width:${(100 * d / Math.max(1, n)).toFixed(0)}%;background:var(--ok)"></div></div>
+      <div class="nums" style="margin-top:6px">${d}/${n} variants done · <a href="cost/" target="_blank">${d === n ? 'cost report' : 'preliminary cost report (live)'} ↗</a></div><div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">${list}</div></div>`);
+  }
+  const w = s.watchdog;
+  renderProblems((w && w.problems) || []);
+  if (w) {
+    const age = w.last_run ? (Date.now() / 1000 - w.last_run) : null;
+    const ok = age != null && age < 600;
+    parts.push(`<div class="task"><div class="top"><span class="name">Watchdog</span>
+      <span class="pill ${ok ? (w.open_24h ? 'wait' : 'ok') : 'wait'}">${ok ? 'last check ' + dur(age) + ' ago' : 'not running!'}${w.open_24h ? ' · ' + w.open_24h + ' open incident(s)' : ''}</span></div>
+      ${w.recent.length ? '<div class="nums" style="margin-top:6px">' + w.recent.map(r => `${esc(r.ts.slice(11, 16))} ${r.status === 'auto_fixed' ? '✓' : '⚠'} ${esc(r.summary)}`).join('<br>') + '</div>' : '<div class="nums">no incidents in the last 24 h</div>'}</div>`);
+  }
+  const recent = (s.server || []).filter(r => !r.active).slice(0, 3);
+  if (recent.length) parts.push(`<div class="task"><div class="nums">Recently finished on the server: ${recent.map(r => `${esc(r.name)} (${r.status})`).join(' · ')}</div></div>`);
+  $('tasks').innerHTML = parts.join('') || '<div class="meta">Nothing running.</div>';
+}
+
+// ---------------------------------------------------------------- utils
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
+const mb = n => (n / 1048576).toFixed(n < 1048576 * 10 ? 1 : 0) + ' MB';
+const fmtT = s => !isFinite(s) || s <= 0 ? '—' : s < 90 ? Math.round(s) + ' s' : s < 5400 ? Math.round(s / 60) + ' min' : (s / 3600).toFixed(1) + ' h';
+window.addEventListener('beforeunload', e => { if ([...uploads.values()].some(s => s.running)) { e.preventDefault(); e.returnValue = ''; } });
+if (token) api('maps').then(r => r.ok && afterLogin()).catch(() => {}); else showLogin();
+</script>
+</body>
+</html>

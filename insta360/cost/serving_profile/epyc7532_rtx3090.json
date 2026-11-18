@@ -1,0 +1,115 @@
+{
+  "host": {
+    "cpu": "AMD EPYC 7532 32-Core Processor",
+    "cpus_available": 64,
+    "gpu": "NVIDIA GeForce RTX 3090"
+  },
+  "frames_per_session": 50,
+  "track_workers_per_process": 2,
+  "profile": {
+    "frames": 50,
+    "mean_ms": 492.6,
+    "p50_ms": 495.6,
+    "stages_ms": {
+      "global descriptors (GPU)": 120.6,
+      "matching (LightGlue, GPU)": 66.9,
+      "pose RANSAC + refine (CPU)": 63.1,
+      "local features (ALIKED, GPU)": 15.5,
+      "decode + resize (CPU)": 13.1,
+      "localization metrics (CPU)": 1.3,
+      "other (retrieval, transfers, tracker, Python)": 212.1
+    }
+  },
+  "throughput": [
+    {
+      "processes": 1,
+      "sessions": 1,
+      "queries": 50,
+      "qps": 1.97,
+      "p50_ms": 494.2,
+      "p95_ms": 641.1,
+      "gpu_util_mean": 13.2,
+      "gpu_mem_max_MiB": 2291.0,
+      "cpu_busy_mean_pct": 20.6
+    },
+    {
+      "processes": 1,
+      "sessions": 2,
+      "queries": 100,
+      "qps": 3.0,
+      "p50_ms": 632.6,
+      "p95_ms": 1117.4,
+      "gpu_util_mean": 29.0,
+      "gpu_mem_max_MiB": 3207.0,
+      "cpu_busy_mean_pct": 21.8
+    },
+    {
+      "processes": 1,
+      "sessions": 4,
+      "queries": 200,
+      "qps": 2.94,
+      "p50_ms": 1315.6,
+      "p95_ms": 1811.3,
+      "gpu_util_mean": 26.6,
+      "gpu_mem_max_MiB": 3227.0,
+      "cpu_busy_mean_pct": 22.2
+    },
+    {
+      "processes": 1,
+      "sessions": 8,
+      "queries": 400,
+      "qps": 3.07,
+      "p50_ms": 2566.8,
+      "p95_ms": 3171.9,
+      "gpu_util_mean": 29.0,
+      "gpu_mem_max_MiB": 3203.0,
+      "cpu_busy_mean_pct": 23.1
+    },
+    {
+      "processes": 2,
+      "sessions": 4,
+      "queries": 200,
+      "qps": 3.45,
+      "p50_ms": 1104.9,
+      "p95_ms": 1681.1,
+      "gpu_util_mean": 27.7,
+      "gpu_mem_max_MiB": 5200.0,
+      "cpu_busy_mean_pct": 24.8
+    },
+    {
+      "processes": 2,
+      "sessions": 8,
+      "queries": 400,
+      "qps": 3.5,
+      "p50_ms": 2216.8,
+      "p95_ms": 3033.3,
+      "gpu_util_mean": 24.7,
+      "gpu_mem_max_MiB": 12238.0,
+      "cpu_busy_mean_pct": 24.9
+    },
+    {
+      "processes": 2,
+      "sessions": 16,
+      "queries": 800,
+      "qps": 3.55,
+      "p50_ms": 4415.5,
+      "p95_ms": 5488.0,
+      "gpu_util_mean": 30.6,
+      "gpu_mem_max_MiB": 5316.0,
+      "cpu_busy_mean_pct": 25.9
+    }
+  ],
+  "done": true,
+  "instance": {
+    "id": 61127760,
+    "offer": 41997153,
+    "gpu": "RTX 3090",
+    "bid": 0.273,
+    "geo": "Ontario, CA",
+    "download_cost": 0.01,
+    "launched": 1794949815.1563878,
+    "ended": 1794950806.0872939
+  },
+  "spent_est": 0.085,
+  "wall_min": 16.6
+}

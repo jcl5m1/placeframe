@@ -1,0 +1,39 @@
+#!/bin/sh
+# Safely restart the map-updater service: stop the running merge job (it resumes after its last finished stage),
+# stop the service, mark running jobs queued (atomically), start the service again, verify it answers.
+set -u
+# service first (so its worker can't mark the interrupted job failed), then the job's process
+for pid in $(ps -eo pid,args | awk '/uvicorn mapper.server:app/ && !/awk/ {print $1}'); do kill "$pid"; done
+sleep 2
+# Stop each job with all its children: jobs run in their own process group; earlier jobs (started before that) and
+# their converters are also caught by path. Job containers (OpenVIO/OpenVINS) are labelled pf-mapper-job.
+for pid in $(ps -eo pid,args | awk '/python -u .*add_recording_to_map.py/ && !/awk/ {print $1}'); do
+  pgid=$(ps -o pgid= -p "$pid" | tr -d ' '); [ -n "$pgid" ] && kill -TERM -- "-$pgid" 2>/dev/null; kill "$pid" 2>/dev/null
+done
+for pid in $(ps -eo pid,args | awk '/pf_mapper\/(jobs|uploads)\// && /(placeframe-insta360\/.*\.py|ffmpeg)/ && !/awk/ {print $1}'); do kill "$pid" 2>/dev/null; done
+sg docker -c "docker ps -q --filter label=pf-mapper-job=1" | xargs -r -I{} sg docker -c "docker kill {}" >/dev/null 2>&1
+sleep 2
+python3 - <<'PY'
+import json
+from pathlib import Path
+for p in (Path.home() / "pf_mapper/jobs").glob("*/job.json"):
+    try:
+        j = json.loads(p.read_text())
+    except ValueError:
+        continue
+    if j.get("state") == "running":
+        j["state"] = "queued"
+        tmp = p.with_suffix(".json.tmp"); tmp.write_text(json.dumps(j, indent=2)); tmp.replace(p)
+PY
+# Start the service in its own systemd unit when the user manager is reachable, so it does not live in the caller's
+# process group: started from an agent's shell it would otherwise be stopped whenever that agent's service restarts.
+# From cron (no user bus) it is started detached as before.
+RUN="$(cd "$(dirname "$0")" && pwd)/run.sh"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+if ! systemd-run --user --quiet --collect --unit="pf-mapper-$(date +%s)" -p KillMode=process --setenv=PATH="$HOME/.local/bin:$PATH" \
+    -p StandardOutput="append:$HOME/pf_mapper/service.log" -p StandardError="append:$HOME/pf_mapper/service.log" \
+    "$RUN" 2>/dev/null; then
+  setsid nohup "$RUN" >> "$HOME/pf_mapper/service.log" 2>&1 < /dev/null &
+fi
+for i in $(seq 1 30); do sleep 2; curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8150/ | grep -q 200 && { echo "service up"; exit 0; }; done
+echo "service did not come up — see ~/pf_mapper/service.log"; exit 1

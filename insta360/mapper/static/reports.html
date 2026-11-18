@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Placeframe · reports</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --ink:#e7e9ee; --muted:#9aa1ad; --line:#272c36; --accent:#4cc2ff; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  main { max-width:1100px; margin:0 auto; padding:16px 16px 60px; }
+  .sub { color:var(--muted); margin:0 0 16px; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:500; font-size:12px; }
+  td a { color:var(--ink); text-decoration:none; font-weight:600; } td a:hover { color:var(--accent); }
+  .muted { color:var(--muted); font-size:12px; }
+  button { background:none; border:1px solid var(--line); color:var(--accent); border-radius:6px; padding:4px 10px; font:inherit; font-size:12px; cursor:pointer; }
+</style>
+</head>
+<body>
+<main>
+  <div id="hdr"></div>
+  <p class="sub">Each report has a permanent link: anyone you send it to can read it and comment on any part of it,
+    without signing in. This list is visible on the tailnet only.</p>
+  <table><thead><tr><th>Report</th><th>Published</th><th>Updated</th><th>Comments</th><th></th></tr></thead><tbody id="rows"></tbody></table>
+</main>
+<script src="/placeframe/pf_ui.js"></script>
+<script>
+PfUI.header(document.getElementById('hdr'), 'reports');
+const when = s => new Date(s).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+const url = id => location.origin + location.pathname + id + '/';
+fetch('api/list').then(r => r.ok ? r.json() : Promise.reject(r.status)).then(list => {
+  document.getElementById('rows').innerHTML = list.length ? list.map(r => `<tr>
+    <td><a href="${url(r.id)}">${PfUI.esc(r.title)}</a><div class="muted">${PfUI.esc(r.id)}</div></td>
+    <td>${when(r.created)}</td><td>${when(r.updated)}</td><td>${r.comments}</td>
+    <td><button type="button" data-id="${PfUI.esc(r.id)}">Copy link</button></td></tr>`).join('')
+    : '<tr><td colspan="5" class="muted">No reports yet.</td></tr>';
+  document.querySelectorAll('button[data-id]').forEach(b => b.onclick = () => {
+    const l = url(b.dataset.id);
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(l).then(() => { b.textContent = 'Copied'; });
+    else prompt('Link to this report:', l);
+  });
+}).catch(e => { document.getElementById('rows').innerHTML = `<tr><td colspan="5" class="muted">Could not load the reports (${PfUI.esc(e)}).</td></tr>`; });
+</script>
+</body>
+</html>

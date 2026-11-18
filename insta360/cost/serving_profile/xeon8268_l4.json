@@ -1,0 +1,68 @@
+{
+  "host": {
+    "cpu": "Intel(R) Xeon(R) Platinum 8268 CPU @ 2.90GHz",
+    "cpus_available": 24,
+    "gpu": "NVIDIA L4"
+  },
+  "frames_per_session": 50,
+  "track_workers_per_process": 2,
+  "runs": [
+    {
+      "threads": "default",
+      "throughput": [
+        {
+          "processes": 1,
+          "sessions": 1,
+          "queries": 50,
+          "qps": 2.31,
+          "p50_ms": 421.8,
+          "p95_ms": 572.5,
+          "gpu_util_mean": 20.9,
+          "gpu_mem_max_MiB": 2106.0,
+          "cpu_busy_mean_pct": 34.9
+        },
+        {
+          "processes": 1,
+          "sessions": 4,
+          "queries": 200,
+          "qps": 3.07,
+          "p50_ms": 1258.0,
+          "p95_ms": 1676.6,
+          "gpu_util_mean": 30.5,
+          "gpu_mem_max_MiB": 3066.0,
+          "cpu_busy_mean_pct": 45.2
+        },
+        {
+          "processes": 2,
+          "sessions": 8,
+          "queries": 400,
+          "qps": 5.55,
+          "p50_ms": 1386.8,
+          "p95_ms": 1864.6,
+          "gpu_util_mean": 64.7,
+          "gpu_mem_max_MiB": 11953.0,
+          "cpu_busy_mean_pct": 68.8
+        }
+      ],
+      "profile": {
+        "frames": 50,
+        "mean_ms": 525.6,
+        "p50_ms": 536.4,
+        "stages_ms": {
+          "matching (LightGlue, GPU)": 101.2,
+          "descriptor decode, PQ (CPU)": 91.8,
+          "global descriptors (GPU)": 76.9,
+          "pose RANSAC + refine (CPU)": 67.9,
+          "local features (ALIKED, GPU)": 50.0,
+          "decode + resize (CPU)": 25.3,
+          "release cached GPU memory": 14.2,
+          "localization metrics (CPU)": 6.5,
+          "tracker update (CPU)": 3.4,
+          "query tiles (CPU)": 2.8,
+          "other (retrieval, transfers, 2D-3D correspondence loop)": 85.6
+        }
+      }
+    }
+  ],
+  "done": true
+}

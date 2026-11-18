@@ -1,0 +1,14 @@
+placeframe-patches/
+placeframe-patches-core/
+gpu/dist/
+gpu/.cudss.whl
+.venv/
+__pycache__/
+.ruff_cache/
+data/
+*.whl
+*.insv
+*.lrv
+
+# Large media for the published proposal (symlinks to ~/pf_data/videos)
+proposal_media/*.mp4

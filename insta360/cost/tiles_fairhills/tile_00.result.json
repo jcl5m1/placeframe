@@ -1,0 +1,116 @@
+{
+  "name": "fairhills-tile-00",
+  "reconstruction_id": "03b7880b-4f2b-4681-a739-3b2615a0b6c5",
+  "r2_prefix": "jobs/03b7880b-4f2b-4681-a739-3b2615a0b6c5",
+  "options": {
+    "neighbors_count": 16,
+    "rig_verification": true,
+    "rotation_threshold": 180.0,
+    "use_prior_position": true,
+    "pose_prior_position_sigma_m": 1.0,
+    "bundle_adjustment_refine_sensor_from_rig": false
+  },
+  "upload_s": 228.1,
+  "total_s": 2708.5,
+  "stages": [
+    {
+      "state": "running",
+      "phase": "downloading",
+      "dispatch": "03b7880b-1",
+      "t": 75.8
+    },
+    {
+      "state": "running",
+      "phase": "extracting_features",
+      "dispatch": "03b7880b-1",
+      "t": 91.0
+    },
+    {
+      "state": "running",
+      "phase": "training_product_quantizer",
+      "dispatch": "03b7880b-1",
+      "t": 1050.1
+    },
+    {
+      "state": "running",
+      "phase": "matching_features",
+      "dispatch": "03b7880b-1",
+      "t": 1065.3
+    },
+    {
+      "state": "running",
+      "phase": "verifying_geometry",
+      "dispatch": "03b7880b-1",
+      "t": 1579.2
+    },
+    {
+      "state": "running",
+      "phase": "reconstructing",
+      "dispatch": "03b7880b-1",
+      "t": 1701.3
+    },
+    {
+      "state": "running",
+      "phase": "uploading",
+      "dispatch": "03b7880b-1",
+      "t": 2631.9
+    },
+    {
+      "state": "succeeded",
+      "phase": "uploading",
+      "dispatch": "03b7880b-1",
+      "t": 2708.5
+    }
+  ],
+  "final_status": {
+    "dispatch": "03b7880b-1",
+    "state": "succeeded",
+    "phase": "uploading",
+    "t": 1794979888.2766387,
+    "memory": {
+      "process_peak_rss_gib": 7.89,
+      "process_rss_gib": 7.88,
+      "host_used_peak_gib": 22.98,
+      "host_total_gib": 251.4,
+      "gpu_used_peak_gib": 5.78
+    },
+    "current": null,
+    "total": null,
+    "attempt": null,
+    "metrics": {
+      "total_images": 6102,
+      "registered_images": 6102,
+      "registration_rate": 100.0,
+      "num_3d_points": 226266,
+      "average_keypoints_per_image": 544.1929905111723,
+      "reprojection_pixel_error_50th_percentile": 0.7849749300000001,
+      "reprojection_pixel_error_90th_percentile": 1.514931204,
+      "track_length_50th_percentile": 4.0,
+      "percent_tracks_with_length_greater_than_or_equal_to_3": 80.56623619987094,
+      "all_verified_matches": 74458,
+      "all_verified_match_rate": 48.771189771268375,
+      "all_verified_match_inliers_mean": 124.76052271078997,
+      "all_verified_match_inliers_median": 74.0,
+      "stereo_verified_matches": 4562,
+      "stereo_verified_match_rate": 69.81940618304255,
+      "stereo_verified_match_inliers_mean": 160.85423060061376,
+      "stereo_verified_match_inliers_median": 130.0,
+      "same_sensor_verified_matches": 8941,
+      "same_sensor_verified_match_rate": 53.841984824762136,
+      "same_sensor_verified_match_inliers_mean": 178.90191253774745,
+      "same_sensor_verified_match_inliers_median": 95.0,
+      "cross_sensor_verified_matches": 29703,
+      "cross_sensor_verified_match_rate": 45.45078957032685,
+      "cross_sensor_verified_match_inliers_mean": 112.71494461838871,
+      "cross_sensor_verified_match_inliers_median": 67.0,
+      "map_image_count": 6102,
+      "map_point_count": 226266,
+      "map_avg_track_length": 5.598799642898181,
+      "map_bounding_volume_m3": 371.17675968127804,
+      "map_viewpoint_diversity": 0.9668593343348909,
+      "truth_alignment_rms_residual_m": 0.08533170263251479,
+      "truth_alignment_max_residual_m": 0.3027791136075448
+    },
+    "results_bytes": 1667031040
+  }
+}

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Placeframe · project</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --ink:#e7e9ee; --muted:#9aa1ad; --line:#272c36; --accent:#4cc2ff; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  main { max-width:1100px; margin:0 auto; padding:16px 16px 60px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:14px; }
+  a.card { display:block; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; color:var(--ink); text-decoration:none; }
+  a.card:hover { border-color:var(--accent); }
+  .card b { font-size:16px; } .card p { color:var(--muted); margin:6px 0 0; }
+  h2 { font-size:14px; color:var(--muted); font-weight:500; margin:26px 0 10px; }
+</style>
+</head>
+<body>
+<main>
+  <div id="hdr"></div>
+  <div class="grid" id="sections"></div>
+  <h2>Placeframe services</h2>
+  <div class="grid" id="services"></div>
+</main>
+<script src="/placeframe/pf_ui.js"></script>
+<script>
+PfUI.header(document.getElementById('hdr'), 'home');
+const about = {
+  dashboard: 'Upload recordings, build and merge maps, follow builds and compute (sign-in).',
+  visualizer: 'Maps in 3D with localized sessions and capture trajectories (tailnet).',
+  reports: 'Studies and summaries; each report has a permanent link anyone can open and comment on.',
+  videos: 'Rendered replays and simulations (tailnet).',
+};
+const card = (p, text) => `<a class="card" href="${p.url}"><b>${PfUI.esc(p.name)}</b><p>${PfUI.esc(text || p.meta || '')}</p></a>`;
+document.getElementById('sections').innerHTML = PfUI.SECTIONS.map(s => card(s, about[s.id])).join('');
+document.getElementById('services').innerHTML = PfUI.PAGES.filter(p => p.folder === 'Placeframe').map(p => card(p)).join('');
+</script>
+</body>
+</html>

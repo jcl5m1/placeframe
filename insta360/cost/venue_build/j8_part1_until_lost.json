@@ -1,0 +1,81 @@
+{
+  "reattached": true,
+  "stages": [
+    {
+      "state": "running",
+      "phase": "extracting_features",
+      "wall": 1794952716.1,
+      "memory": {
+        "process_peak_rss_gib": 4.23,
+        "process_rss_gib": 4.23,
+        "host_used_peak_gib": 12.28,
+        "host_total_gib": 251.6,
+        "gpu_used_peak_gib": 2.34
+      }
+    },
+    {
+      "state": "running",
+      "phase": "extracting_features",
+      "wall": 1794952764.7,
+      "memory": {
+        "process_peak_rss_gib": 4.31,
+        "process_rss_gib": 4.31,
+        "host_used_peak_gib": 12.28,
+        "host_total_gib": 251.6,
+        "gpu_used_peak_gib": 2.34
+      }
+    },
+    {
+      "state": "running",
+      "phase": "training_product_quantizer",
+      "wall": 1794956023.1,
+      "memory": {
+        "process_peak_rss_gib": 13.7,
+        "process_rss_gib": 10.85,
+        "host_used_peak_gib": 19.91,
+        "host_total_gib": 251.6,
+        "gpu_used_peak_gib": 2.34
+      }
+    },
+    {
+      "state": "running",
+      "phase": "matching_features",
+      "wall": 1794956085.1,
+      "memory": {
+        "process_peak_rss_gib": 13.7,
+        "process_rss_gib": 10.86,
+        "host_used_peak_gib": 19.91,
+        "host_total_gib": 251.6,
+        "gpu_used_peak_gib": 2.34
+      }
+    },
+    {
+      "state": "running",
+      "phase": "verifying_geometry",
+      "wall": 1794957914.9,
+      "memory": {
+        "process_peak_rss_gib": 13.7,
+        "process_rss_gib": 11.12,
+        "host_used_peak_gib": 19.91,
+        "host_total_gib": 251.6,
+        "gpu_used_peak_gib": 5.13
+      }
+    }
+  ],
+  "final_status": {
+    "dispatch": "7e893dd2-2",
+    "state": "running",
+    "phase": "verifying_geometry",
+    "t": 1794958394.3632958,
+    "memory": {
+      "process_peak_rss_gib": 13.7,
+      "process_rss_gib": 11.87,
+      "host_used_peak_gib": 19.91,
+      "host_total_gib": 251.6,
+      "gpu_used_peak_gib": 5.13
+    },
+    "current": 330260,
+    "total": 419088,
+    "attempt": null
+  }
+}
