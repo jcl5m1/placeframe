@@ -10,7 +10,7 @@ an Insta360 X5 house capture and a 3-recording house map · **Code:** `cost/` (s
   about $0.20–0.40 of rented GPU time; the first study projected 677 h for one connected map (18 h in tiles).
 - **Serving cost is set by how often phones query.** For 3,000 attendees walking in breaks, an adaptive query rate
   (every 5 s while fixes agree) needs ~89 RTX 3090s at peak and 189 GPU-hours per event day: **$28/day on
-  marketplace GPUs, $134–191 on cloud on-demand GPUs**. A fixed 2 Hz rate needs 8–10x more.
+  marketplace GPUs, ~$190 on cloud on-demand GPUs** (L4 or A10G). A fixed 2 Hz rate needs 8–10x more.
 - **Map storage is negligible (~3 GB per venue, cents per month); data transfer is not.** GPUs that autoscale pull
   the map (~1.15 GB) each time one starts: ~770 GB/day here. From S3/GCS/Azure to GPUs in another provider that is
   **$68–93/day in egress, more than the GPUs**; from Cloudflare R2 it is $0. With GPUs in the same cloud as the
@@ -134,13 +134,15 @@ one process topped out at 7.9 q/s with the GPU a third idle. We plan with 8 q/s 
 autoscaled every 5 minutes with 30% headroom.
 
 **What limits a GPU: the CPU, not the API.** We ran the localizer's tracked path in-process (no API, no HTTP;
-`bench/localizer_profile.py`) on two rented RTX 3090s with the same map and walk (data in `cost/serving_profile/`):
+`bench/localizer_profile.py`) on rented GPUs with the same map and walk (data in `cost/serving_profile/`):
 
-| | Rented, Ryzen 9 5900XT | Rented, EPYC 7532 (2.4 GHz) | Home, i7-11700K, through the API |
+| GPU and host CPU | One request, median | 1 session | 2 processes, 8 sessions |
 |---|---|---|---|
-| One request, median | 208 ms | 496 ms | 193 ms |
-| 1 session | 4.4 q/s, GPU 36% busy | 2.0 q/s, GPU 13% | 4.9 q/s, GPU 34% |
-| 2 processes, 8 sessions | 7.4 q/s, GPU 62% | 3.5 q/s, GPU 25% | 9.6 q/s, GPU 75% |
+| Home RTX 3090, i7-11700K, through the API | 193 ms | 4.9 q/s, GPU 34% busy | 9.6 q/s, GPU 75% |
+| Rented RTX 3090, Ryzen 5 5600 (via dstack) | 238 ms | 4.0 q/s, GPU 32% | 9.6 q/s, GPU 76% |
+| Rented RTX 3090, Ryzen 9 5900XT | 208 ms | 4.4 q/s, GPU 36% | 7.4 q/s, GPU 62% |
+| Rented RTX 3090, EPYC 7532 (2.4 GHz) | 496 ms | 2.0 q/s, GPU 13% | 3.5 q/s, GPU 25% |
+| Rented L4, Xeon 8268 (2.9 GHz) | 536 ms | 2.3 q/s, GPU 21% | 5.5 q/s, GPU 65% |
 
 One request on the Ryzen host, by stage: matching 70 ms, pose RANSAC and refinement 45 ms, descriptor decoding (PQ)
 17–30 ms, global descriptors 23 ms, release of cached GPU memory 12 ms, local features 11 ms, image decoding 9 ms,
@@ -156,13 +158,16 @@ that matching needs, more localizer processes per GPU), not in the GPU or the AP
 
 ![cost](3_serving_cost.png)
 
-| Query policy | Queries per day | Peak q/s | Peak GPUs | GPU-hours/day | Vast RTX 3090 ($0.15/h) | GCP L4 ($0.71/h) | AWS A10G ($1.01/h) |
+| Query policy | Queries per day | Peak q/s | Peak GPUs | GPU-hours/day | Vast RTX 3090 ($0.15/h) | GCP L4 ($0.71/h, 5.5 q/s each) | AWS A10G ($1.01/h) |
 |---|---|---|---|---|---|---|---|
-| fixed 2 Hz | 32.1 M | 4,619 | 751 | 1,777 | $266 | $1,261 | $1,794 |
-| fixed 1 Hz | 16.2 M | 2,369 | 385 | 896 | $134 | $636 | $905 |
-| **adaptive** | **3.3 M** | **547** | **89** | **189** | **$28** | **$134** | **$191** |
+| fixed 2 Hz | 32.1 M | 4,619 | 751 | 1,777 | $266 | $1,832 | $1,794 |
+| fixed 1 Hz | 16.2 M | 2,369 | 385 | 896 | $134 | $927 | $905 |
+| **adaptive** | **3.3 M** | **547** | **89** | **189** | **$28** | **$192** | **$191** |
 
-(L4/A10G throughput is assumed equal to the RTX 3090's; not measured.)
+Peak GPUs and GPU-hours are for RTX 3090s at 8 q/s. **L4, measured:** on a rented L4 (Xeon 8268, 2.9 GHz) the same
+in-process test gave 5.5 q/s (2 processes, 8 sessions, GPU 65% busy), against 7.4–9.6 for RTX 3090s, so an L4 day
+needs ~1.45x the GPUs (adaptive: 130 at peak, 271 GPU-hours). Its GPU stages are also slower (matching 101 ms
+against 70 ms). A10G: not measured (no Vast offers); its column assumes the RTX 3090's rate.
 
 **Storage and transfer** (adaptive policy; the map pulled by every GPU server as it starts, ~670 starts/day; the
 app downloads a ~1 MB point cloud per session; query images go straight to the GPUs):
@@ -193,7 +198,7 @@ app downloads a ~1 MB point cloud per session; query images go straight to the G
 - Localization throughput was measured on one map (8,370 images) with one recorded walk; larger maps retrieve over
   more images (linear, small) and match the same number of pairs.
 - The in-process serving profile ran on rented hosts (Ryzen 9 5900XT, EPYC 7532), not at home: the home GPU stopped
-  working (it fell off the PCIe bus) before the profile. Cost of both runs: ~$0.14.
+  working (it fell off the PCIe bus) before the profile. Cost of the four runs: ~$0.25.
 - Prices: Vast.ai interruptible from live offers on 2026-11-17; cloud on-demand list prices; storage and egress from
   provider price pages (R2: no egress fees).
 - The x4 build ran while a recording was preprocessed at low priority on the same machine; its extraction time may

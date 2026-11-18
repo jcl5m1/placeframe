@@ -166,6 +166,30 @@ ALL_PROXY=socks5://localhost:1055/ HTTP_PROXY=http://localhost:1055/ worker ...
   - With one provider and ~100 short tasks, a ~300-line custom controller (Vast CLI + lease queue + R2) is simple and transparent.
   - **SkyPilot managed jobs (one job per tile, or `--num-jobs` with a rank-to-tile map) are a reasonable shortcut** if you'd rather not write the autoscaler. Prototype both on one small build.
 
+### dstack pilot (2026-11-17, measured)
+
+We ran the serving benchmark (`bench/localizer_profile.py`) as a dstack task on Vast (`fleet/dstack_bench.py`;
+dstack 0.22.8, local server, Vast backend; config in `~/.dstack/server/config.yml`, mode 600).
+
+| | dstack | Our launcher (`fleet/remote_bench.py`, `broker.py`) |
+|---|---|---|
+| Set-up | `uv tool install "dstack[server]"`, a server process, the Vast API key in its config | Vast CLI only |
+| Before the first run | An elastic fleet is necessary (`nodes: 0..1`); without one the run waits with a hint | Nothing |
+| Offer filters | GPU, CPU count, RAM, disk, price, spot policy, regions | Any Vast field: also CPU speed (`cpu_ghz`), reliability, download speed, country |
+| Bid | dstack's spot price (top offer: $0.43/h at a $0.24 minimum bid); this run paid $0.277/h | 1.5x the minimum bid |
+| Submit to running | 2.8 min (1 min waiting for the fleet, 1.4 min provisioning) | ~2.3 min |
+| Retry | `retry: on_events [interruption, no-capacity, error]` (configured; no interruption happened) | Own code: relaunch, resume from R2 checkpoints |
+| End of run | Instance destroyed by itself (`all_jobs_done`); cost recorded ($0.023 for 6.6 min) | Own code destroys it; we estimate the cost |
+
+Result on the host it chose (RTX 3090, Ryzen 5 5600): 9.6 q/s at 2 processes x 8 sessions, as at home. That host
+was a fast CPU by chance: dstack cannot ask for CPU speed, and on a slow-CPU host the same GPU gives half that.
+
+**Verdict.** dstack can replace our launch, watch and destroy code (`broker._launch`/`_watch`, `remote_bench.py`,
+`reattach.py`) and adds cost records, logs and more backends. Keep the lease agent, the pre-signed R2 tickets and the
+stage checkpoints: dstack does not supply them. Before we change over: (1) find a way to require a fast CPU (a check
+at task start that exits on a slow host, then let dstack's retry pick another offer), and (2) test a real
+interruption. SkyPilot was not tested.
+
 ## Recommended architecture
 
 1. **Single provider: Vast.ai interruptible** (`--bid_price`), 1× RTX 3090/4090/A5000-class, filtered on `reliability>0.98 inet_down>500 inet_up>200 disk_space>=60 cuda_vers>=<your CUDA>`, sorted by `dph`. RunPod on-demand only as an optional overflow.

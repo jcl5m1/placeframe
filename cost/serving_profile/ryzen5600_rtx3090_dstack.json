@@ -1,0 +1,317 @@
+{
+  "run": {
+    "id": "a63dfe1b-fde8-45ad-bdbc-4a88d57afa1a",
+    "project_name": "main",
+    "user": "admin",
+    "fleet": {
+      "id": "4178ff4c-c2bc-487b-a370-30343aaecddd",
+      "name": "vast"
+    },
+    "submitted_at": "2026-11-18T04:15:06.706482Z",
+    "last_processed_at": "2026-11-18T04:21:25.175064Z",
+    "status": "done",
+    "status_message": "done",
+    "termination_reason": "all_jobs_done",
+    "jobs": [
+      {
+        "job_submissions": [
+          {
+            "id": "d7efecd1-8e49-4ac4-ba12-5258d97c0811",
+            "submission_num": 2,
+            "deployment_num": 0,
+            "submitted_at": "2026-11-18T04:16:20.005434Z",
+            "last_processed_at": "2026-11-18T04:21:17.265257Z",
+            "finished_at": "2026-11-18T04:21:17.265257Z",
+            "inactivity_secs": null,
+            "status": "done",
+            "status_message": "exited (0)",
+            "termination_reason": "done_by_runner",
+            "termination_reason_message": null,
+            "exit_status": 0,
+            "job_provisioning_data": {
+              "backend": "vastai",
+              "base_backend": null,
+              "instance_type": {
+                "name": "51029894",
+                "resources": {
+                  "cpus": 12,
+                  "memory_mib": 65761,
+                  "gpus": [
+                    {
+                      "name": "RTX3090",
+                      "memory_mib": 24576,
+                      "vendor": "nvidia"
+                    }
+                  ],
+                  "spot": true,
+                  "disk": {
+                    "size_mib": 102400
+                  },
+                  "cpu_arch": "x86",
+                  "description": ""
+                }
+              },
+              "instance_id": "61179335",
+              "hostname": "76.71.182.53",
+              "internal_ip": null,
+              "public_ip_enabled": true,
+              "instance_network": null,
+              "region": "ca-quebec",
+              "availability_zone": null,
+              "reservation": null,
+              "price": 0.27704,
+              "username": "root",
+              "ssh_port": 40260,
+              "dockerized": false,
+              "ssh_proxy": null,
+              "backend_data": null,
+              "gpu_driver": null
+            },
+            "job_runtime_data": {
+              "network_mode": "host",
+              "gpu": null,
+              "cpu": null,
+              "memory": null,
+              "ports": null,
+              "volume_names": [],
+              "offer": {
+                "backend": "vastai",
+                "instance": {
+                  "name": "51029894",
+                  "resources": {
+                    "cpus": 12,
+                    "memory_mib": 65761,
+                    "gpus": [
+                      {
+                        "name": "RTX3090",
+                        "memory_mib": 24576,
+                        "vendor": "nvidia"
+                      }
+                    ],
+                    "spot": true,
+                    "disk": {
+                      "size_mib": 102400
+                    },
+                    "cpu_arch": "x86",
+                    "description": ""
+                  }
+                },
+                "region": "ca-quebec",
+                "price": 0.27704,
+                "backend_data": {
+                  "min_bid": 0.24
+                },
+                "availability": "available",
+                "availability_zones": null,
+                "instance_runtime": "runner",
+                "blocks": 1,
+                "total_blocks": 1
+              },
+              "working_dir": "/",
+              "username": "root"
+            },
+            "error": null,
+            "probes": [],
+            "image_pull_progress": null,
+            "provider_ref": null
+          }
+        ],
+        "job_connection_info": null
+      }
+    ],
+    "latest_job_submission": {
+      "id": "d7efecd1-8e49-4ac4-ba12-5258d97c0811",
+      "submission_num": 2,
+      "deployment_num": 0,
+      "submitted_at": "2026-11-18T04:16:20.005434Z",
+      "last_processed_at": "2026-11-18T04:21:17.265257Z",
+      "finished_at": "2026-11-18T04:21:17.265257Z",
+      "inactivity_secs": null,
+      "status": "done",
+      "status_message": "exited (0)",
+      "termination_reason": "done_by_runner",
+      "termination_reason_message": null,
+      "exit_status": 0,
+      "job_provisioning_data": {
+        "backend": "vastai",
+        "base_backend": null,
+        "instance_type": {
+          "name": "51029894",
+          "resources": {
+            "cpus": 12,
+            "memory_mib": 65761,
+            "gpus": [
+              {
+                "name": "RTX3090",
+                "memory_mib": 24576,
+                "vendor": "nvidia"
+              }
+            ],
+            "spot": true,
+            "disk": {
+              "size_mib": 102400
+            },
+            "cpu_arch": "x86",
+            "description": ""
+          }
+        },
+        "instance_id": "61179335",
+        "hostname": "76.71.182.53",
+        "internal_ip": null,
+        "public_ip_enabled": true,
+        "instance_network": null,
+        "region": "ca-quebec",
+        "availability_zone": null,
+        "reservation": null,
+        "price": 0.27704,
+        "username": "root",
+        "ssh_port": 40260,
+        "dockerized": false,
+        "ssh_proxy": null,
+        "backend_data": null,
+        "gpu_driver": null
+      },
+      "job_runtime_data": {
+        "network_mode": "host",
+        "gpu": null,
+        "cpu": null,
+        "memory": null,
+        "ports": null,
+        "volume_names": [],
+        "offer": {
+          "backend": "vastai",
+          "instance": {
+            "name": "51029894",
+            "resources": {
+              "cpus": 12,
+              "memory_mib": 65761,
+              "gpus": [
+                {
+                  "name": "RTX3090",
+                  "memory_mib": 24576,
+                  "vendor": "nvidia"
+                }
+              ],
+              "spot": true,
+              "disk": {
+                "size_mib": 102400
+              },
+              "cpu_arch": "x86",
+              "description": ""
+            }
+          },
+          "region": "ca-quebec",
+          "price": 0.27704,
+          "backend_data": {
+            "min_bid": 0.24
+          },
+          "availability": "available",
+          "availability_zones": null,
+          "instance_runtime": "runner",
+          "blocks": 1,
+          "total_blocks": 1
+        },
+        "working_dir": "/",
+        "username": "root"
+      },
+      "error": null,
+      "probes": [],
+      "image_pull_progress": null,
+      "provider_ref": null
+    },
+    "cost": 0.0229,
+    "service": null,
+    "deployment_num": 0,
+    "error": null,
+    "deleted": false,
+    "next_triggered_at": null
+  },
+  "host": {
+    "cpu": "AMD Ryzen 5 5600 6-Core Processor",
+    "cpus_available": 12,
+    "gpu": "NVIDIA GeForce RTX 3090"
+  },
+  "frames_per_session": 50,
+  "track_workers_per_process": 2,
+  "runs": [
+    {
+      "threads": "default",
+      "throughput": [
+        {
+          "processes": 1,
+          "sessions": 1,
+          "queries": 50,
+          "qps": 3.97,
+          "p50_ms": 245.6,
+          "p95_ms": 327.5,
+          "gpu_util_mean": 31.5,
+          "gpu_mem_max_MiB": 2263.0,
+          "cpu_busy_mean_pct": 51.6
+        },
+        {
+          "processes": 1,
+          "sessions": 4,
+          "queries": 200,
+          "qps": 7.71,
+          "p50_ms": 482.5,
+          "p95_ms": 732.9,
+          "gpu_util_mean": 70.4,
+          "gpu_mem_max_MiB": 3225.0,
+          "cpu_busy_mean_pct": 69.5
+        },
+        {
+          "processes": 2,
+          "sessions": 8,
+          "queries": 400,
+          "qps": 9.6,
+          "p50_ms": 795.7,
+          "p95_ms": 1187.6,
+          "gpu_util_mean": 76.2,
+          "gpu_mem_max_MiB": 12380.0,
+          "cpu_busy_mean_pct": 80.3
+        }
+      ],
+      "profile": {
+        "frames": 50,
+        "mean_ms": 246.2,
+        "p50_ms": 238.3,
+        "stages_ms": {
+          "descriptor decode, PQ (CPU)": 71.3,
+          "matching (LightGlue, GPU)": 44.5,
+          "pose RANSAC + refine (CPU)": 43.5,
+          "global descriptors (GPU)": 28.5,
+          "release cached GPU memory": 12.3,
+          "local features (ALIKED, GPU)": 10.5,
+          "decode + resize (CPU)": 8.9,
+          "localization metrics (CPU)": 0.8,
+          "tracker update (CPU)": 0.6,
+          "query tiles (CPU)": 0.2,
+          "other (retrieval, transfers, 2D-3D correspondence loop)": 25.1
+        }
+      }
+    }
+  ],
+  "dstack_events": [
+    {
+      "status": "pending",
+      "t": 23.9
+    },
+    {
+      "status": "provisioning",
+      "t": 85.9
+    },
+    {
+      "status": "running",
+      "t": 168.5
+    },
+    {
+      "status": "terminating",
+      "t": 375.1
+    },
+    {
+      "status": "done",
+      "t": 395.8
+    }
+  ],
+  "wall_min": 6.6
+}
